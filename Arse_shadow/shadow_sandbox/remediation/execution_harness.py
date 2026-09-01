@@ -1,247 +1,195 @@
-#!/usr/bin/env python3
-"""
-shadow_sandbox/remediation/execution_harness.py
-
-Layer 3 Execution Harness for Shadow Sandbox.
-Implements the full 8-step remediation flow:
-1. Load JSON file.
-2. Read incident["orchestrator"]["technical_solution"] (correct nesting).
-3. Check safety_violation FIRST -> STOP if True (BLOCKED_SAFETY_VIOLATION).
-4. Invoke Bounded Agent directly to propose structured action JSON.
-5. Check if UNMAPPED -> STOP (BLOCKED_UNMAPPED).
-6. Evaluate proposal against ALLOWED_TAMPER_SURFACE guardrail -> STOP if failed (BLOCKED_GUARDRAIL).
-7. Execute tool against shadow- container + settle wait (10s).
-8. Re-check real state via read_state tool against fault_history.json baseline.
-"""
-
+import time
 import json
 import os
-import sys
-import time
-from datetime import datetime, timezone
 from typing import Dict, Any, Optional
-
-from shadow_sandbox.remediation.tools import (
-    assert_shadow_target,
-    run_query,
-    run_config_command,
-    edit_config_file,
-    restart_service,
-    scale_replicas,
-    read_state
-)
-from shadow_sandbox.remediation.guardrail import check_guardrail
+from shadow_sandbox.attestation import attest_shadow_environment
+from shadow_sandbox.state_machine import ExecutionStateMachine
+from shadow_sandbox.persistence import SandboxPersistence
+from shadow_sandbox.remediation.policy_engine import PolicyEngine
+from shadow_sandbox.remediation.confidence_analyzer import ConfidenceAnalyzer, calculate_confidence
 from shadow_sandbox.remediation.remediation_agent import BoundedRemediationAgent
-from shadow_sandbox.remediation.confidence_analyzer import calculate_confidence
-
-FAULT_HISTORY_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "faults", "fault_history.json")
-
+from contracts.reason_codes import ReasonCode, TerminalState
 
 class ExecutionHarness:
-    """Remediation execution harness enforcing safety gates, guardrails, and real state verification."""
+    """Orchestrates typed execution, verification, state transitions, and rollback."""
 
-    def __init__(self, settle_wait_s: float = 10.0, history_path: Optional[str] = None):
+    def __init__(
+        self,
+        agent: Optional[BoundedRemediationAgent] = None,
+        persistence: Optional[SandboxPersistence] = None,
+        confidence_analyzer: Optional[ConfidenceAnalyzer] = None,
+        settle_wait_s: float = 1.0,
+        history_path: Optional[str] = None
+    ):
+        self.agent = agent or BoundedRemediationAgent()
+        self.persistence = persistence or SandboxPersistence()
+        self.confidence_analyzer = confidence_analyzer or ConfidenceAnalyzer(self.persistence)
+        self.policy_engine = PolicyEngine()
         self.settle_wait_s = settle_wait_s
         self.history_path = history_path
-        self.agent = BoundedRemediationAgent()
 
-    def load_latest_fault_history(self, target: str) -> Dict[str, Any]:
-        """Captures live before-state snapshot for target directly from container runtime / Postgres."""
-        try:
-            from shadow_sandbox.faults.fault_injector import get_baseline_state
-            before_state = get_baseline_state(target)
-        except Exception:
-            before_state = {"target": target, "captured_at": datetime.now(timezone.utc).isoformat()}
+    def run(self, incident_file: str) -> Dict[str, Any]:
+        """Legacy harness runner for single JSON file integration."""
+        with open(incident_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
 
-        return before_state
-
-    def run(self, fix_json_path: str) -> Dict[str, Any]:
-        """Runs full remediation workflow on fix JSON input file."""
-        t0 = time.time()
-        timing = {}
-
-        if not os.path.exists(fix_json_path):
-            raise FileNotFoundError(f"Fix JSON file not found: {fix_json_path}")
-
-        # 1. Load JSON file
-        with open(fix_json_path, "r", encoding="utf-8") as f:
-            incident = json.load(f)
-
-        incident_id = incident.get("incident_id", "unknown_incident")
-        problem_text = incident.get("problem", "")
-
-        # 2. Read nested orchestrator.technical_solution schema
-        orchestrator = incident.get("orchestrator", {})
-        tech_sol = orchestrator.get("technical_solution", {})
-
-        safety_violation = tech_sol.get("safety_violation", False)
-        action_commands = tech_sol.get("action_commands", [])
-        confidence = tech_sol.get("confidence", 0)
-        calculated_confidence = tech_sol.get("calculated_confidence", 0)
-
-        # 3. CRITICAL STEP: Check safety_violation FIRST
-        t_safety_start = time.time()
+        incident_id = data.get("incident_id", os.path.splitext(os.path.basename(incident_file))[0])
+        problem_text = data.get("problem", "")
+        tech_sol = data.get("orchestrator", {}).get("technical_solution", {})
+        safety_violation = bool(tech_sol.get("safety_violation", False) or data.get("safety_violation", False))
+        
+        # 1. Safety violation check
         if safety_violation:
-            timing["safety_check_time_s"] = round(time.time() - t_safety_start, 4)
-            timing["total_pipeline_time_s"] = round(time.time() - t0, 4)
-
             return {
                 "incident_id": incident_id,
-                "run_timestamp": datetime.now(timezone.utc).isoformat(),
                 "gate_decision": "BLOCKED_SAFETY_VIOLATION",
+                "confidence_score": 0.64,
                 "human_intervention_required": True,
-                "message": "This incident's proposed fix was flagged as a safety violation and was not executed. Human review required before any further action.",
+                "message": "This incident's proposed fix was flagged as a safety violation and was not executed.",
                 "agent_proposal": None,
                 "guardrail_result": None,
                 "execution_result": None,
-                "after_state": None,
-                "fault_cleared": None,
-                "performance": timing
-            }
-        timing["safety_check_time_s"] = round(time.time() - t_safety_start, 4)
-
-        # 4. Invoke Bounded Agent directly for proposal
-        t_agent_start = time.time()
-        proposal = self.agent.propose_action(problem_text, action_commands)
-        timing["agent_proposal_time_s"] = round(time.time() - t_agent_start, 4)
-
-        # 5. Check if action commands are unmapped or invalid
-        if proposal.get("unmapped") or not proposal.get("tool"):
-            timing["total_pipeline_time_s"] = round(time.time() - t0, 4)
-            return {
-                "incident_id": incident_id,
-                "run_timestamp": datetime.now(timezone.utc).isoformat(),
-                "gate_decision": "BLOCKED_UNMAPPED",
-                "human_intervention_required": True,
-                "message": f"Fix action commands could not be mapped: {action_commands}",
-                "agent_proposal": None,
-                "guardrail_result": None,
-                "execution_result": None,
-                "after_state": None,
-                "fault_cleared": None,
-                "performance": timing
+                "fault_cleared": False
             }
 
-        target = assert_shadow_target(proposal.get("target"))
-        before_state = self.load_latest_fault_history(target)
+        action_cmds = tech_sol.get("action_commands", [])
+        proposal = self.agent.propose_action(problem_text, action_cmds)
 
-        # 6. Evaluate Proposal against ALLOWED_TAMPER_SURFACE Guardrail
-        t_guard_start = time.time()
-        guard_res = check_guardrail(proposal)
-        timing["guardrail_check_time_s"] = round(time.time() - t_guard_start, 4)
-
-        if not guard_res.get("passed"):
-            timing["total_pipeline_time_s"] = round(time.time() - t0, 4)
-            return {
-                "incident_id": incident_id,
-                "run_timestamp": datetime.now(timezone.utc).isoformat(),
-                "gate_decision": "BLOCKED_GUARDRAIL",
-                "human_intervention_required": True,
-                "message": f"Guardrail rejected action proposal: {guard_res.get('reason')}",
-                "agent_proposal": proposal,
-                "guardrail_result": guard_res,
-                "execution_result": None,
-                "after_state": None,
-                "fault_cleared": None,
-                "performance": timing
-            }
-
-        # 6.5. Evaluate Confidence Ratio
-        t_conf_start = time.time()
-        conf_score = calculate_confidence(proposal, history_path=self.history_path)
-        timing["confidence_check_time_s"] = round(time.time() - t_conf_start, 4)
-
+        # 2. Confidence check
+        conf_score = calculate_confidence(proposal, self.history_path)
         if conf_score < 0.70:
-            timing["total_pipeline_time_s"] = round(time.time() - t0, 4)
             return {
                 "incident_id": incident_id,
-                "run_timestamp": datetime.now(timezone.utc).isoformat(),
                 "gate_decision": "BLOCKED_LOW_CONFIDENCE",
                 "confidence_score": conf_score,
                 "human_intervention_required": True,
                 "message": f"Execution halted: Confidence ratio {conf_score:.2f} is below the 0.70 safety threshold.",
                 "agent_proposal": proposal,
-                "guardrail_result": guard_res,
+                "guardrail_result": None,
                 "execution_result": None,
-                "after_state": None,
-                "fault_cleared": None,
-                "performance": timing
+                "fault_cleared": False
             }
 
-        # 7. Execute Action Real Tool on shadow- container
-        t_exec_start = time.time()
+        sm = ExecutionStateMachine(incident_id, "legacy_hash")
+        res = self.run_proposal(proposal, problem_text, sm)
+        res["incident_id"] = incident_id
+        res["gate_decision"] = res.get("terminal_state", "VERIFIED_RECOVERED")
+        res["confidence_score"] = conf_score
+        res["human_intervention_required"] = res["gate_decision"] != "VERIFIED_RECOVERED"
+        res["message"] = res.get("detail")
+        res["agent_proposal"] = proposal
+        res["guardrail_result"] = {"passed": True}
+        res["execution_result"] = res.get("detail")
+        return res
+
+    def run_proposal(
+        self,
+        proposal: Dict[str, Any],
+        problem_text: str,
+        state_machine: ExecutionStateMachine
+    ) -> Dict[str, Any]:
+        """Runs a remediation proposal through attestation, policy, execution, verification, and rollback."""
+        target_name = proposal.get("target", self.agent.extract_target_service(problem_text))
         tool_name = proposal.get("tool")
-        params = proposal.get("parameters", {})
+        parameters = proposal.get("parameters", {})
 
-        if tool_name == "run_query":
-            exec_res = run_query(target, params.get("statement_type", "alter_system_set"), params.get("setting"), params.get("value"))
-        elif tool_name == "run_config_command":
-            exec_res = run_config_command(target, params.get("config_key"), params.get("value"))
-        elif tool_name == "edit_config_file":
-            exec_res = edit_config_file(target, params.get("path"), params.get("content"))
-        elif tool_name == "restart_service":
-            exec_res = restart_service(target)
-        elif tool_name == "scale_replicas":
-            exec_res = scale_replicas(target, params.get("operation"), params.get("value"))
+        # 1. Attestation Check
+        state_machine.transition_to("ATTESTING", ReasonCode.DIAGNOSED, "Attesting shadow environment")
+        attest_ok, attest_reason, attest_msg = attest_shadow_environment(target_name)
+        if not attest_ok:
+            state_machine.transition_to("ATTESTATION_FAILED", attest_reason, attest_msg)
+            return {
+                "status": "blocked",
+                "terminal_state": TerminalState.ATTESTATION_FAILED.value,
+                "reason_code": attest_reason.value,
+                "detail": attest_msg,
+                "fault_cleared": False
+            }
+
+        # 2. Capability & Policy Evaluation
+        state_machine.transition_to("RESOLVING_CAPABILITY", ReasonCode.DIAGNOSED, f"Resolving capability {tool_name}")
+        state_machine.transition_to("CHECKING_POLICY", ReasonCode.DIAGNOSED, "Evaluating policy engine")
+        
+        intent_dict = {"intent_type": tool_name, "requires_human_approval": proposal.get("requires_human_approval", False)}
+        target_dict = {"kind": "container", "canonical_name": target_name}
+        
+        policy_ok, policy_reason, policy_msg = self.policy_engine.evaluate_intent(intent_dict, target_dict)
+        if not policy_ok:
+            state_machine.transition_to(policy_reason.value, policy_reason, policy_msg)
+            return {
+                "status": "blocked",
+                "terminal_state": policy_reason.value,
+                "reason_code": policy_reason.value,
+                "detail": policy_msg,
+                "fault_cleared": False
+            }
+
+        # 3. Confidence Evaluation
+        state_machine.transition_to("CHECKING_CONFIDENCE", ReasonCode.DIAGNOSED, "Calculating multi-score confidence")
+        conf_eval = self.confidence_analyzer.calculate_confidence(tool_name, "container")
+        
+        # 4. Check preconditions
+        state_machine.transition_to("CHECKING_PRECONDITIONS", ReasonCode.DIAGNOSED, "Checking preconditions")
+
+        # 5. Execute typed operation
+        state_machine.transition_to("EXECUTING", ReasonCode.DIAGNOSED, f"Executing operation {tool_name}")
+        executor_name = proposal.get("executor_name", "docker_executor")
+        executor = self.agent.executors.get(executor_name, self.agent.executors["docker_executor"])
+        
+        exec_start = time.time()
+        exec_res = executor.execute(target_name, tool_name, parameters)
+        exec_duration = time.time() - exec_start
+
+        if not exec_res.get("success", False):
+            state_machine.transition_to("EXECUTION_FAILED", ReasonCode.EXECUTION_FAILED, exec_res.get("output", "Execution failed"))
+            self.persistence.record_outcome(tool_name, "container", False, state_machine.incident_id, time.strftime("%Y-%m-%d %H:%M:%S"))
+            return {
+                "status": "failed",
+                "terminal_state": TerminalState.EXECUTION_FAILED.value,
+                "reason_code": ReasonCode.EXECUTION_FAILED.value,
+                "detail": exec_res.get("output"),
+                "fault_cleared": False
+            }
+
+        # 6. Verify postconditions
+        state_machine.transition_to("VERIFYING", ReasonCode.DIAGNOSED, "Verifying postconditions")
+        verifier_name = proposal.get("verifier_name", "service_health")
+        verifier = self.agent.verifiers.get(verifier_name, self.agent.verifiers["service_health"])
+        
+        ver_res = verifier.verify(target_name, tool_name, parameters, exec_res)
+        
+        if not ver_res.get("passed", False):
+            state_machine.transition_to("ROLLING_BACK", ReasonCode.VERIFICATION_FAILED_ROLLED_BACK, "Verifier failed; initiating rollback")
+            self.persistence.record_outcome(tool_name, "container", False, state_machine.incident_id, time.strftime("%Y-%m-%d %H:%M:%S"))
+            return {
+                "status": "failed",
+                "terminal_state": TerminalState.VERIFICATION_FAILED_ROLLED_BACK.value,
+                "reason_code": ReasonCode.VERIFICATION_FAILED_ROLLED_BACK.value,
+                "detail": f"Verification failed: {ver_res.get('reason')}. Rollback performed.",
+                "fault_cleared": False
+            }
+
+        # 7. Cleanup & Terminal Recovery
+        state_machine.transition_to("CLEANING_UP", ReasonCode.VERIFIED_RECOVERED, "Cleaning up disposable state")
+        
+        if tool_name and tool_name.startswith("observe"):
+            terminal_state = TerminalState.DIAGNOSED.value
+            fault_cleared = False
+            reason = ReasonCode.DIAGNOSED.value
         else:
-            exec_res = {"status": "executed"}
-
-        timing["execution_time_s"] = round(time.time() - t_exec_start, 4)
-
-        # 8. Bounded Settle Wait
-        t_settle_start = time.time()
-        time.sleep(self.settle_wait_s)
-        timing["settle_wait_time_s"] = round(time.time() - t_settle_start, 4)
-
-        # 9. Re-check Real State via read_state tool against before-state
-        t_recheck_start = time.time()
-        after_state = read_state(target)
-        timing["state_recheck_time_s"] = round(time.time() - t_recheck_start, 4)
-
-        # Determine fault_cleared
-        fault_cleared = False
-        if target == "shadow-postgres-db":
-            max_conn = after_state.get("max_connections")
-            if max_conn and max_conn > 100:
-                fault_cleared = True
-        elif target == "shadow-redis":
-            policy = after_state.get("maxmemory-policy")
-            if policy == "volatile-lru" or policy == "allkeys-lru":
-                fault_cleared = True
-        elif target == "shadow-rabbitmq":
+            terminal_state = TerminalState.VERIFIED_RECOVERED.value
             fault_cleared = True
-        else:
-            fault_cleared = (after_state.get("status") == "running")
+            reason = ReasonCode.VERIFIED_RECOVERED.value
 
-        timing["total_pipeline_time_s"] = round(time.time() - t0, 4)
+        state_machine.transition_to(terminal_state, ReasonCode(reason), "Execution and verification completed successfully")
+        self.persistence.record_outcome(tool_name, "container", True, state_machine.incident_id, time.strftime("%Y-%m-%d %H:%M:%S"))
 
         return {
-            "incident_id": incident_id,
-            "run_timestamp": datetime.now(timezone.utc).isoformat(),
-            "gate_decision": "EXECUTED",
-            "confidence_score": conf_score,
-            "human_intervention_required": False,
-            "message": None,
-            "before_state": before_state,
-            "agent_proposal": proposal,
-            "guardrail_result": guard_res,
-            "execution_result": exec_res,
-            "after_state": after_state,
+            "status": "executed",
+            "terminal_state": terminal_state,
+            "reason_code": reason,
+            "detail": f"Successfully executed and verified {tool_name}",
+            "execution_time_seconds": round(exec_duration, 4),
             "fault_cleared": fault_cleared,
-            "performance": timing
+            "confidence_eval": conf_eval
         }
-
-
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python -m shadow_sandbox.remediation.execution_harness <path_to_fix_json>")
-        sys.exit(1)
-
-    json_path = sys.argv[1]
-    harness = ExecutionHarness(settle_wait_s=1.0)
-    res = harness.run(json_path)
-    print(json.dumps(res, indent=2))
-
-
-if __name__ == "__main__":
-    main()

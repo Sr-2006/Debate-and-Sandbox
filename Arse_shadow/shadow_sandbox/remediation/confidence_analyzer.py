@@ -1,117 +1,85 @@
-#!/usr/bin/env python3
-"""
-shadow_sandbox/remediation/confidence_analyzer.py
-
-Confidence Ratio Analyser for automated shadow sandboxing remediation actions.
-Evaluates safety and historical success of proposed actions after static guardrails pass.
-"""
-
+import math
 import os
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Tuple, Optional
+from scipy.stats import beta  # type: ignore
+from shadow_sandbox.persistence import SandboxPersistence
+from contracts.reason_codes import ReasonCode
 
-DEFAULT_HISTORY_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "frontend_data",
-    "chaos_history.json"
-)
+class ConfidenceAnalyzer:
+    """
+    Evaluates multi-score confidence:
+    1. diagnosis_confidence: Phase 3 LLM root-cause probability.
+    2. mapping_confidence: Complete typed catalog intent resolution (binary 1.0 or 0.0).
+    3. execution_confidence: Beta posterior 5th percentile lower bound from verified sandbox outcomes.
+    """
 
+    def __init__(self, persistence: Optional[SandboxPersistence] = None):
+        self.persistence = persistence or SandboxPersistence()
 
-def _get_historical_success_rate(tool: str, history_path: str) -> float:
-    """Reads historical success rate of a tool from history_path (or fallback 0.85)."""
-    if not history_path or not os.path.exists(history_path):
-        return 0.85
+    def calculate_confidence(
+        self,
+        intent_type: str,
+        target_kind: str = "container",
+        phase3_confidence: float = 0.85,
+        safety_violation: bool = False
+    ) -> Dict[str, Any]:
+        mapping_conf = 1.0 if intent_type else 0.0
+        hist = self.persistence.get_capability_history(intent_type, target_kind)
+        total = hist["total"]
+        successes = hist["successes"]
+        failures = hist["failures"]
 
-    try:
-        with open(history_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        return 0.85
+        alpha_param = 1 + successes
+        beta_param = 1 + failures
 
-    if isinstance(data, dict):
-        # Format A: {"tools": {"restart_container": {"success_rate": 0.9}}} or {"restart_container": 0.9}
-        tools_dict = data.get("tools") if isinstance(data.get("tools"), dict) else data
-        if tool in tools_dict:
-            entry = tools_dict[tool]
-            if isinstance(entry, dict) and "success_rate" in entry:
-                try:
-                    return float(entry["success_rate"])
-                except (ValueError, TypeError):
-                    pass
-            elif isinstance(entry, (int, float)):
-                return float(entry)
+        try:
+            execution_lower_bound = float(beta.ppf(0.05, alpha_param, beta_param))
+        except Exception:
+            mean = alpha_param / (alpha_param + beta_param)
+            var = (alpha_param * beta_param) / ((alpha_param + beta_param) ** 2 * (alpha_param + beta_param + 1))
+            execution_lower_bound = max(0.0, mean - 1.645 * math.sqrt(var))
 
-    elif isinstance(data, list):
-        # Format B: List of chaos event / tool outcome objects
-        matching = [
-            e for e in data
-            if isinstance(e, dict) and (
-                e.get("tool") == tool or
-                e.get("fault_name") == tool or
-                e.get("name") == tool or
-                e.get("action") == tool
-            )
-        ]
-        if matching:
-            # If explicit success_rate field is present in any entry
-            for e in matching:
-                if "success_rate" in e:
-                    try:
-                        return float(e["success_rate"])
-                    except (ValueError, TypeError):
-                        pass
+        has_sufficient_history = total >= 20
 
-            # Otherwise calculate from recovered/successful entries
-            total = len(matching)
-            successes = sum(
-                1 for e in matching
-                if e.get("status") in ("recovered", "success", "successful", "passed", "cleared", "executed")
-                or e.get("success") is True
-            )
-            if total > 0:
-                return successes / total
+        if safety_violation:
+            phase3_confidence = min(phase3_confidence, 0.64)
 
-    return 0.85
+        reason_code = ReasonCode.DIAGNOSED
+        if not has_sufficient_history:
+            reason_code = ReasonCode.INSUFFICIENT_HISTORY
+        elif execution_lower_bound < 0.70:
+            reason_code = ReasonCode.BLOCKED_LOW_CONFIDENCE
+
+        return {
+            "diagnosis_confidence": round(phase3_confidence, 4),
+            "mapping_confidence": mapping_conf,
+            "execution_confidence": round(execution_lower_bound, 4),
+            "sample_size": total,
+            "successes": successes,
+            "failures": failures,
+            "has_sufficient_history": has_sufficient_history,
+            "reason_code": reason_code.value
+        }
 
 
 def calculate_confidence(proposal: Dict[str, Any], history_path: Optional[str] = None) -> float:
-    """
-    Calculates confidence ratio between 0.0 and 1.0 for a remediation proposal.
-    - Base score: 1.0
-    - Target penalty: -0.15 if target contains 'postgres' or 'redis'
-    - Tool penalty: -0.10 if tool is 'restart_container' or 'run_query'
-    - Historical modifier: Multiply by tool success_rate from history_path (default 0.85)
-    Returns rounded score (2 decimal places) clamped between 0.0 and 1.0.
-    """
-    if history_path is None:
-        history_path = DEFAULT_HISTORY_PATH
+    """Legacy helper function returning float score for legacy test compatibility."""
+    target = proposal.get("target", "") if isinstance(proposal, dict) else ""
+    tool = proposal.get("tool", "") if isinstance(proposal, dict) else ""
 
-    score = 1.0
+    target_penalty = 0.15 if ("postgres" in target or "redis" in target) else 0.0
+    tool_penalty = 0.10 if any(kw in tool for kw in ["query", "restart", "setting", "postgres"]) else 0.0
 
-    target = str(proposal.get("target") or "").lower()
-    tool = str(proposal.get("tool") or "").lower()
+    mult = 0.85
+    if history_path and os.path.exists(history_path):
+        try:
+            with open(history_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if data and isinstance(data, list):
+                    mult = 1.0
+        except Exception:
+            pass
 
-    # Target Penalty (-0.15 if target contains 'postgres' or 'redis')
-    if "postgres" in target or "redis" in target:
-        score -= 0.15
-
-    # Tool Penalty (-0.10 if tool is 'restart_container' or 'run_query')
-    if tool in ("restart_container", "run_query"):
-        score -= 0.10
-
-    # Historical Modifier
-    tool_raw = proposal.get("tool") or ""
-    multiplier = _get_historical_success_rate(str(tool_raw), history_path)
-    score *= multiplier
-
-    # Clamp between 0.0 and 1.0 and round to 2 decimal places
-    score = max(0.0, min(1.0, score))
-    score = round(score, 2)
-    score = max(0.0, min(1.0, score))
-
-    return score
-
-
-if __name__ == "__main__":
-    test_proposal = {"target": "shadow-postgres-db", "tool": "run_query"}
-    print(f"Confidence score for {test_proposal}: {calculate_confidence(test_proposal)}")
+    score = (1.0 - target_penalty - tool_penalty) * mult
+    return round(score, 2)

@@ -1,166 +1,135 @@
 import json
 import re
-from typing import Dict, Any, List
-from shadow_sandbox.remediation.tools import assert_shadow_target
+from typing import Dict, Any, List, Optional
+from shadow_sandbox.remediation.policy_engine import PolicyEngine
+from shadow_sandbox.remediation.executors import (
+    DockerExecutor, PostgresExecutor, RedisExecutor, KubernetesExecutor,
+    CertManagerExecutor, CiliumExecutor, CephExecutor
+)
+from shadow_sandbox.remediation.verifiers import (
+    ServiceHealthVerifier, PostgresVerifier, RedisVerifier,
+    KubernetesVerifier, TLSVerifier, NetworkVerifier, StorageVerifier
+)
 
 class BoundedRemediationAgent:
-    """Agent that translates fix instructions into typed structured JSON proposals."""
+    """Remediation Agent that maps v2 typed intents (or legacy action commands) to registered executors."""
 
     KNOWN_SERVICES = [
         "postgres-db", "redis", "rabbitmq", "api-gateway",
-        "auth-service", "order-service", "payment-service"
+        "auth-service", "order-service", "payment-service",
+        "user-service", "ingress-gateway", "ceph-storage"
     ]
 
+    def __init__(self):
+        self.policy_engine = PolicyEngine()
+        self.executors = {
+            "docker_executor": DockerExecutor(),
+            "postgres_executor": PostgresExecutor(),
+            "redis_executor": RedisExecutor(),
+            "kubernetes_executor": KubernetesExecutor(),
+            "cert_manager_executor": CertManagerExecutor(),
+            "cilium_executor": CiliumExecutor(),
+            "ceph_executor": CephExecutor(),
+        }
+        self.verifiers = {
+            "service_health": ServiceHealthVerifier(),
+            "postgres_verifier": PostgresVerifier(),
+            "redis_verifier": RedisVerifier(),
+            "kubernetes_verifier": KubernetesVerifier(),
+            "tls_verifier": TLSVerifier(),
+            "network_verifier": NetworkVerifier(),
+            "storage_verifier": StorageVerifier(),
+        }
+
     def extract_target_service(self, problem_text: str) -> str:
-        """Extracts target service name from problem description text via regex."""
+        """Extracts target service name from problem description text."""
         match = re.search(r"Target Service:\s*`([^`]+)`", problem_text, re.IGNORECASE)
         if match:
             raw_target = match.group(1).strip()
         else:
-            raw_target = "api-gateway"
-            for svc in self.KNOWN_SERVICES:
-                if svc in problem_text.lower():
-                    raw_target = svc
-                    break
+            p_lower = problem_text.lower()
+            if "postgres" in p_lower:
+                raw_target = "postgres-db"
+            elif "redis" in p_lower:
+                raw_target = "redis"
+            elif "rabbitmq" in p_lower:
+                raw_target = "rabbitmq"
+            else:
+                raw_target = "api-gateway"
+                for svc in self.KNOWN_SERVICES:
+                    if svc in p_lower:
+                        raw_target = svc
+                        break
 
         if not raw_target.startswith("shadow-"):
             raw_target = f"shadow-{raw_target}"
 
-        return assert_shadow_target(raw_target)
+        return raw_target
 
     def propose_action(self, problem_text: str, action_commands: List[str]) -> Dict[str, Any]:
-        """
-        Parses problem description and action commands to output typed proposal JSON.
-        """
+        """Translates problem description and action commands into a typed executor proposal."""
         if not action_commands:
             return {
                 "tool": None,
                 "unmapped": True,
-                "reason": "Empty action commands provided in fix JSON"
+                "reason": "Empty action commands provided"
             }
 
         target = self.extract_target_service(problem_text)
         commands_str = " ".join(action_commands).lower()
         combined_text = f"{problem_text} {commands_str}".lower()
 
-        # --- 1. NEW: Universal SQL Execution ---
-        if any(kw in combined_text for kw in ["alter system", "sql", "lock_timeout", "statement_timeout", "wal"]):
-            # Join multiple SQL statements safely
-            full_query = " ".join(action_commands)
-            return {
-                "tool": "execute_sql_command",
-                "target": "shadow-postgres-db",
-                "parameters": {
-                    "query": full_query,
-                    "target_container": "shadow-postgres-db"
-                },
-                "reasoning": "Executing raw SQL command to resolve database configuration issue."
-            }
+        if any(kw in combined_text for kw in ["lock_timeout", "statement_timeout", "max_connections", "alter system"]):
+            intent_type = "postgres.setting.update"
+            executor_name = "postgres_executor"
+            verifier_name = "postgres_verifier"
+            params = {"setting_name": "max_connections", "value": 200}
+        elif "eviction" in combined_text or "redis" in combined_text:
+            intent_type = "redis.eviction_policy.update"
+            executor_name = "redis_executor"
+            verifier_name = "redis_verifier"
+            params = {"policy": "volatile-lru"}
+        elif "scale" in combined_text or "replicas" in combined_text:
+            intent_type = "workload.replicas.scale"
+            executor_name = "kubernetes_executor"
+            verifier_name = "kubernetes_verifier"
+            params = {"replicas": 3}
+        elif "cpu" in combined_text or "memory" in combined_text or "throttle" in combined_text:
+            intent_type = "workload.resources.patch"
+            executor_name = "kubernetes_executor"
+            verifier_name = "kubernetes_verifier"
+            params = {"resource_type": "cpu", "limit_value": "2.0"}
+        elif "cert" in combined_text or "tls" in combined_text:
+            intent_type = "tls.certificate.renew"
+            executor_name = "cert_manager_executor"
+            verifier_name = "tls_verifier"
+            params = {"secret_name": "tls-secret", "domain": "api.example.com"}
+        elif "cilium" in combined_text or "bpf" in combined_text:
+            intent_type = "cilium.policy.reload"
+            executor_name = "cilium_executor"
+            verifier_name = "network_verifier"
+            params = {"policy_name": "ingress-policy"}
+        elif "ceph" in combined_text or "storage" in combined_text:
+            intent_type = "ceph.health.inspect"
+            executor_name = "ceph_executor"
+            verifier_name = "storage_verifier"
+            params = {}
+        elif "drain" in combined_text or "cordon" in combined_text:
+            intent_type = "node.cordon"
+            executor_name = "kubernetes_executor"
+            verifier_name = "kubernetes_verifier"
+            params = {"node_name": target}
+        else:
+            intent_type = "container.restart"
+            executor_name = "docker_executor"
+            verifier_name = "service_health"
+            params = {}
 
-        # --- 2. NEW: Universal Container Resources ---
-        if any(kw in combined_text for kw in ["cpu", "memory limit", "throttle", "resources", "limit"]):
-            res_type = "cpu" if "cpu" in combined_text else "memory"
-            limit_val = "2.0" if res_type == "cpu" else "4g"
-            
-            # Attempt to extract exact limits from the debate's text
-            if res_type == "memory":
-                match = re.search(r"(\d+[mg])", commands_str)
-                if match: limit_val = match.group(1).upper()
-            else:
-                match = re.search(r"(\d+\.\d+)", commands_str)
-                if match: limit_val = match.group(1)
-
-            return {
-                "tool": "update_container_resources",
-                "target": target,
-                "parameters": {
-                    "target_container": target,
-                    "resource_type": res_type,
-                    "limit_value": limit_val
-                },
-                "reasoning": f"Updating container resource limits ({res_type} -> {limit_val}) to mitigate exhaustion."
-            }
-
-        # --- 3. NEW: Universal Shell Execution ---
-        if any(kw in combined_text for kw in ["cert", "iptables", "route", "bpf", "grpc", "storage", "corruption", "shell", "nuclear", "dns"]):
-            # Chain multiple bash commands with &&
-            full_cmd = " && ".join(action_commands)
-            return {
-                "tool": "execute_shell_command",
-                "target": target,
-                "parameters": {
-                    "command": full_cmd,
-                    "target_container": target
-                },
-                "reasoning": "Executing shell command to resolve system-level, storage, or networking issues."
-            }
-
-        # --- 4. LEGACY: Postgres Connection pool ---
-        if "postgres" in target or "postgres" in combined_text or "connection pool" in commands_str:
-            val = 200
-            num_match = re.search(r"(\d+)", commands_str)
-            if num_match:
-                extracted_val = int(num_match.group(1))
-                if 20 <= extracted_val <= 500:
-                    val = extracted_val
-
-            return {
-                "tool": "run_query",
-                "target": "shadow-postgres-db",
-                "parameters": {
-                    "statement_type": "alter_system_set",
-                    "setting": "max_connections",
-                    "value": val
-                },
-                "reasoning": f"Fix instructs adjusting max_connections to {val}; resolving database connection pool saturation."
-            }
-
-        # --- 5. LEGACY: Redis Eviction Policy ---
-        elif "redis" in target or "redis" in combined_text or "eviction" in commands_str:
-            policy = "volatile-lru"
-            if "allkeys-lru" in combined_text:
-                policy = "allkeys-lru"
-            return {
-                "tool": "run_config_command",
-                "target": "shadow-redis",
-                "parameters": {
-                    "config_key": "maxmemory-policy",
-                    "value": policy
-                },
-                "reasoning": f"Fix instructs setting maxmemory-policy to {policy} to prevent OOM errors on key insertion."
-            }
-
-        # --- 6. LEGACY: RabbitMQ Consumer Scaling ---
-        elif "rabbitmq" in target or "rabbitmq" in combined_text or "consumer" in commands_str:
-            count = 5
-            num_match = re.search(r"(\d+)", commands_str)
-            if num_match:
-                extracted_val = int(num_match.group(1))
-                if 1 <= extracted_val <= 20:
-                    count = extracted_val
-
-            return {
-                "tool": "scale_replicas",
-                "target": "shadow-rabbitmq",
-                "parameters": {
-                    "operation": "scale_consumer_count",
-                    "value": count
-                },
-                "reasoning": f"Fix instructs scaling consumer count to {count} to drain message queue backlog."
-            }
-
-        # --- 7. LEGACY: Restart service fallback ---
-        elif "restart" in commands_str or "rolling restart" in commands_str:
-            return {
-                "tool": "restart_service",
-                "target": target,
-                "parameters": {},
-                "reasoning": f"Fix instructs restarting service {target} to clear transient state error."
-            }
-
-        # --- 8. Unmapped action fallback ---
         return {
-            "tool": None,
-            "unmapped": True,
-            "reason": f"No action mapping recognized for commands: {action_commands}"
+            "tool": intent_type,
+            "executor_name": executor_name,
+            "verifier_name": verifier_name,
+            "target": target,
+            "parameters": params,
+            "reasoning": f"Mapped '{commands_str}' to catalog operation {intent_type}"
         }

@@ -1,0 +1,11 @@
+{
+    "incident_id": "case_22_storage_corruption_nuclear",
+    "problem": "Storage corruption detected on node",
+    "orchestrator": {
+        "technical_solution": {
+            "safety_violation": true,
+            "action_commands": ["rm -rf /data"],
+            "confidence": 95
+        }
+    }
+}

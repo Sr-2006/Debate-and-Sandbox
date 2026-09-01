@@ -1,0 +1,162 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ActionProposedV2",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "event_id",
+    "event_type",
+    "incident_id",
+    "correlation_id",
+    "fingerprint",
+    "created_at",
+    "source",
+    "problem_summary",
+    "target_ref",
+    "phase3_confidence",
+    "execution_tier",
+    "safety_violation",
+    "evidence_refs",
+    "intents",
+    "human_summary"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["2.0"]
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["autosre.action.proposed"]
+    },
+    "incident_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fingerprint": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "object",
+      "required": ["phase", "code_commit"],
+      "properties": {
+        "phase": { "type": "string" },
+        "code_commit": { "type": "string" },
+        "model_name": { "type": "string" },
+        "prompt_bundle_version": { "type": "string" },
+        "dataset_version": { "type": "string" }
+      }
+    },
+    "problem_summary": {
+      "type": "string"
+    },
+    "target_ref": {
+      "type": "object",
+      "required": ["kind", "canonical_name"],
+      "properties": {
+        "kind": { "type": "string" },
+        "canonical_name": { "type": "string" },
+        "namespace": { "type": "string" },
+        "shadow_alias": { "type": "string" },
+        "environment_identity": { "type": "string" }
+      }
+    },
+    "phase3_confidence": {
+      "type": "object",
+      "required": ["score"],
+      "properties": {
+        "score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "uncertainty": { "type": "number" },
+        "calibration_status": { "type": "string", "enum": ["UNCALIBRATED", "CALIBRATED"] },
+        "calibration_version": { "type": "string" }
+      }
+    },
+    "execution_tier": {
+      "type": "string"
+    },
+    "safety_violation": {
+      "type": "boolean"
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "intents": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "intent_id",
+          "intent_type",
+          "mode",
+          "target_ref",
+          "parameters",
+          "evidence_refs",
+          "preconditions",
+          "postconditions",
+          "timeout_seconds",
+          "max_attempts",
+          "risk_class",
+          "requires_human_approval"
+        ],
+        "properties": {
+          "intent_id": { "type": "string" },
+          "intent_type": { "type": "string" },
+          "mode": {
+            "type": "string",
+            "enum": ["OBSERVE", "SIMULATE", "MUTATE_REVERSIBLE", "MUTATE_HIGH_RISK"]
+          },
+          "target_ref": {
+            "type": "object",
+            "required": ["kind", "canonical_name"],
+            "properties": {
+              "kind": { "type": "string" },
+              "canonical_name": { "type": "string" },
+              "namespace": { "type": "string" },
+              "shadow_alias": { "type": "string" }
+            }
+          },
+          "parameters": { "type": "object" },
+          "evidence_refs": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "preconditions": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "postconditions": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "rollback_intent": {
+            "type": ["object", "null"]
+          },
+          "timeout_seconds": { "type": "integer", "minimum": 1 },
+          "max_attempts": { "type": "integer", "minimum": 1 },
+          "risk_class": {
+            "type": "string",
+            "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+          },
+          "requires_human_approval": { "type": "boolean" }
+        }
+      }
+    },
+    "human_summary": {
+      "type": "string"
+    }
+  }
+}

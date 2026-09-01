@@ -1,0 +1,143 @@
+# Implementation Plan - Phase 3 Debate & Phase 4 Shadow Sandbox Redesign (`ImplementationSD.md`)
+
+Execute a comprehensive multi-phase redesign of the Phase 3 Debate Engine and Phase 4 Shadow Sandbox as outlined in [`ImplementationSD.md`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/ImplementationSD.md). 
+
+This refactoring replaces fragile string-based shell/SQL heuristics with a **versioned typed remediation intent contract (`autosre.action.proposed.v2`)**, a **declarative capability registry**, **fail-closed policy enforcement**, **shadow attestation**, an **explicit state machine harness**, and a **statistically calibrated confidence model**.
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Architectural Changes & Security Model**
+> 1. **Typed Remediation Intent Contract (`autosre.action.proposed.v2`)**: Phase 3 will no longer output free-form shell strings or arbitrary raw SQL. Instead, it will output typed, schema-validated remediation intents.
+> 2. **Removal of Autonomous Raw Shell/SQL Execution**: `execute_sql_command` and `execute_shell_command` fallback paths will be removed from autonomous execution. All actions must resolve to registered, parameterized capabilities.
+> 3. **Fail-Closed Policy Enforcement**: Unknown targets, tools, or policy combinations will fail closed with explicit reason codes (`BLOCKED_UNKNOWN_CAPABILITY`, `BLOCKED_TARGET_UNRESOLVED`, `BLOCKED_POLICY`) instead of passing through or falling back to generic `api-gateway`.
+> 4. **Calibrated Confidence**: Low confidence will no longer be artificially driven by static target/tool penalties (e.g. 0.64 cap for Postgres/`run_query`). Execution confidence will use Beta-binomial historical smoothing, uncertainty metrics, and distinct diagnosis vs mapping vs execution scores.
+
+---
+
+## Open Questions
+
+> [!NOTE]
+> No blocking open questions. All design choices strictly align with the specifications in [`ImplementationSD.md`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/ImplementationSD.md).
+
+---
+
+## Proposed Changes
+
+### Component 1: Shared Contract & Capability Registry (`contracts/`)
+
+#### [NEW] [`contracts/action_proposed_v2.schema.json`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/contracts/action_proposed_v2.schema.json)
+- Authoritative JSON Schema defining `autosre.action.proposed.v2` envelope, metadata, phase 3 confidence, target reference, and array of typed remediation intents.
+
+#### [NEW] [`contracts/models.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/contracts/models.py)
+- Strongly typed Pydantic models for envelopes, intents, parameters, target references, execution tiers, and outcome payloads.
+
+#### [NEW] [`contracts/capabilities.yaml`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/contracts/capabilities.yaml)
+- Versioned capability registry defining capability IDs (`observe.logs.search`, `postgres.setting.update`, `workload.replicas.scale`, `workload.resources.patch`, `tls.certificate.renew`, `node.cordon`, `node.drain`, `cilium.policy.reload`, `ingress.rate_limit.patch`, `ceph.health.inspect`, etc.), parameter schemas, risk classes, operation modes (`OBSERVE`, `MUTATE_REVERSIBLE`, `MUTATE_HIGH_RISK`), pre/postcondition keys, and rollback functions.
+
+#### [NEW] [`contracts/reason_codes.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/contracts/reason_codes.py)
+- Machine-readable reason codes for all terminal states (`REJECTED_SCHEMA`, `BLOCKED_SAFETY`, `BLOCKED_TARGET_UNRESOLVED`, `BLOCKED_UNKNOWN_CAPABILITY`, `BLOCKED_POLICY`, `BLOCKED_LOW_CONFIDENCE`, `VERIFIED_RECOVERED`, etc.).
+
+#### [NEW] [`contracts/tests/`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/contracts/tests/)
+- Golden valid and invalid envelope fixtures for unit testing schema validation.
+
+---
+
+### Component 2: Phase 3 Debate Engine (`debate/`)
+
+#### [MODIFY] [`debate/prompts/`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/debate/prompts/)
+- Update `optimist.txt`, `critic.txt`, `fact_checker.txt`, and `orchestrator.txt` to require evidence-grounded typed intents from the capability catalog, treating incident text/logs as untrusted evidence.
+
+#### [MODIFY] [`debate/orchestrator.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/debate/orchestrator.py)
+- Validate model outputs against `autosre.action.proposed.v2` schema with a single repair retry before marking `REJECTED_SCHEMA`.
+
+#### [MODIFY] [`debate/debate_manager.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/debate/debate_manager.py)
+- Separate diagnosis confidence score from mapping and execution confidence. Preserve calibration metadata and abstention reasons.
+
+#### [MODIFY] [`debate/scoring.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/debate/scoring.py)
+- Implement exact evidence binding, prompt-injection resistance checking, and feature logging.
+
+#### [MODIFY] [`debate/config.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/debate/config.py)
+- Centralize versioned thresholds and calibration file paths; remove duplicate conflicting policy constants.
+
+#### [MODIFY] [`debate/action_publisher.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/debate/action_publisher.py)
+- Update publisher to serialize and output v2 envelopes without lossy flattening, generating a canonical payload hash and idempotency key.
+
+#### [MODIFY] [`debate/evidence_loader.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/debate/evidence_loader.py)
+- Fail fast on invalid schema structure and preserve evidence provenance hashes.
+
+#### [MODIFY] [`debate/incident_parser.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/debate/incident_parser.py)
+- Delimit untrusted telemetry fields to prevent prompt injection hijacking system instructions.
+
+---
+
+### Component 3: Phase 4 Shadow Sandbox (`Arse_shadow/shadow_sandbox/`)
+
+#### [NEW] [`Arse_shadow/shadow_sandbox/remediation/legacy_adapter.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/Arse_shadow/shadow_sandbox/remediation/legacy_adapter.py)
+- Temporary migration adapter to parse legacy JSON payloads into v2 typed intents during transition.
+
+#### [MODIFY] [`Arse_shadow/shadow_sandbox/remediation/remediation_agent.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/Arse_shadow/shadow_sandbox/remediation/remediation_agent.py)
+- Replace keyword heuristics with declarative intent validation and registry capability resolution.
+
+#### [MODIFY] [`Arse_shadow/shadow_sandbox/remediation/guardrail.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/Arse_shadow/shadow_sandbox/remediation/guardrail.py)
+- Implement registry-driven fail-closed policy checks. Unknown combinations produce `BLOCKED_POLICY` or `BLOCKED_UNKNOWN_CAPABILITY`.
+
+#### [MODIFY] [`Arse_shadow/shadow_sandbox/remediation/tools.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/Arse_shadow/shadow_sandbox/remediation/tools.py)
+- Refactor into typed, operation-specific executors (Docker SDK, Kubernetes API, Postgres client, Redis client, cert-manager/Cilium emulators) and read-only diagnostic probes. Remove autonomous raw shell execution.
+
+#### [MODIFY] [`Arse_shadow/shadow_sandbox/remediation/execution_harness.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/Arse_shadow/shadow_sandbox/remediation/execution_harness.py)
+- Rewrite execution harness as an explicit finite state machine (`INIT`, `ATTEST`, `PREFLIGHT`, `MUTATE`, `VERIFY`, `ROLLBACK`, `TERMINAL`). Require explicit tool success and postcondition verification before setting `VERIFIED_RECOVERED`.
+
+#### [MODIFY] [`Arse_shadow/shadow_sandbox/remediation/confidence_analyzer.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/Arse_shadow/shadow_sandbox/remediation/confidence_analyzer.py)
+- Redesign confidence calculation around Beta-binomial smoothing on unified execution history. Eliminate hardcoded subtract-and-multiply penalties.
+
+#### [MODIFY] [`Arse_shadow/shadow_sandbox/faults/fault_agent.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/Arse_shadow/shadow_sandbox/faults/fault_agent.py)
+- Require scenario-declared fault plans. Remove target defaulting to `api-gateway`.
+
+#### [MODIFY] [`Arse_shadow/shadow_sandbox/faults/fault_injector.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/Arse_shadow/shadow_sandbox/faults/fault_injector.py)
+- Validate fault injection effects before enabling remediation. Docker 409 or container errors must result in `FAULT_SETUP_FAILED`.
+
+#### [MODIFY] [`Arse_shadow/shadow_sandbox/run_pipeline.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/Arse_shadow/shadow_sandbox/run_pipeline.py)
+- Add durable inbox claim/deduplication, shadow environment attestation checks, and truthful terminal status reporting.
+
+#### [MODIFY] [`Arse_shadow/shadow_sandbox/report_generator.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/Arse_shadow/shadow_sandbox/report_generator.py)
+- Output structured learning records with complete evidence, execution metadata, and schema versioning.
+
+#### [NEW] [`Arse_shadow/shadow_sandbox/outcome_store.py`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/Arse_shadow/shadow_sandbox/outcome_store.py)
+- Append-only dataset log for recording real sandbox outcomes for future RL engine training.
+
+---
+
+## Phased Execution Roadmap
+
+Execution will proceed sequentially through the tickets specified in Section 17 of [`ImplementationSD.md`](file:///c:/Users/Shashank/OneDrive/Desktop/Smart%20horizon%20hackathon/ImplementationSD.md):
+
+1. **Ticket 1 (Phase A Gate)**: Write characterization tests reproducing all 18 defects in Section 2.2.
+2. **Ticket 2 (Phase B Gate)**: Create shared `contracts/` package (JSON Schema v2, Pydantic models, capability registry YAML, reason codes).
+3. **Ticket 3**: Update Phase 3 Debate engine to emit evidence-bound typed intents using v2 schema.
+4. **Ticket 4 & 5 (Phase C Gate)**: Implement Phase 4 capability registry, parameter validation, and fail-closed guardrails.
+5. **Ticket 6 & 7 (Phase D Gate)**: Rewrite execution harness into state machine, add shadow attestation, durable deduplication, and fault-setup gates.
+6. **Ticket 8 - 12 (Phase E & F Gates)**: Implement specific capability executors (Postgres settings/locks, WAL diagnostics, Kubernetes replica/resource scaling, TLS cert renewal, Cilium operations, Ceph diagnostics).
+7. **Ticket 13 (Phase G Gate)**: Overhaul confidence analyzer with Beta-binomial historical smoothing and separate diagnosis/mapping/execution scores.
+8. **Ticket 14 (Phase H Gate)**: Harden prompts against injection attacks and update test suites with deterministic model response mocks.
+9. **Ticket 15 & 16 (Phase I Gate)**: Run full 22-case validation suite, verify 0 false `VERIFIED_RECOVERED` outcomes, 0 `BLOCKED_UNMAPPED` regressions, and generate RL dataset handoff.
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- **Unit & Contract Tests**:
+  - `python -m pytest contracts/tests/` (v2 JSON schema validation)
+  - `python -m pytest debate/tests/` (Debate manager, scoring, prompt injection, evidence binding)
+  - `python -m pytest Arse_shadow/shadow_sandbox/remediation/` (Guardrail, tools, state machine harness, confidence analyzer)
+- **Characterization & Defect Tests**:
+  - `python -m pytest Arse_shadow/shadow_sandbox/test_pipeline.py`
+- **22-Case Benchmark Suite**:
+  - `python debate/run_test_suite.py --dir debate/tests/scenarios/prod_pack`
+
+### Manual & System Verification
+- Verify terminal state reports in `Arse_shadow/shadow_sandbox/reports/` for truthful status reporting (`VERIFIED_RECOVERED`, `BLOCKED_SAFETY`, `REQUIRES_HUMAN_APPROVAL`).
+- Verify no raw shell commands or raw SQL strings reach execution.

@@ -1,0 +1,217 @@
+capabilities:
+  observe.logs.search:
+    description: "Search service logs for error patterns"
+    mode: "OBSERVE"
+    risk_class: "LOW"
+    supported_targets: ["container", "workload", "service"]
+    executor: "docker_executor"
+    verifier: "service_health"
+    requires_human_approval: false
+    parameters_schema:
+      query: { type: "string" }
+      max_lines: { type: "integer", default: 100 }
+
+  observe.metrics.query:
+    description: "Query system metrics (CPU, Memory, Latency)"
+    mode: "OBSERVE"
+    risk_class: "LOW"
+    supported_targets: ["container", "workload", "service", "node"]
+    executor: "docker_executor"
+    verifier: "service_health"
+    requires_human_approval: false
+    parameters_schema:
+      metric_name: { type: "string" }
+
+  postgres.setting.update:
+    description: "Update PostgreSQL runtime configuration parameter"
+    mode: "MUTATE_REVERSIBLE"
+    risk_class: "MEDIUM"
+    supported_targets: ["container", "database"]
+    executor: "postgres_executor"
+    verifier: "postgres_verifier"
+    requires_human_approval: false
+    parameters_schema:
+      setting_name: { type: "string" }
+      value: { type: ["string", "number"] }
+
+  postgres.lock.diagnose:
+    description: "Query PostgreSQL for long locks and blocked transactions"
+    mode: "OBSERVE"
+    risk_class: "LOW"
+    supported_targets: ["container", "database"]
+    executor: "postgres_executor"
+    verifier: "postgres_verifier"
+    requires_human_approval: false
+    parameters_schema: {}
+
+  postgres.wal.diagnose:
+    description: "Inspect PostgreSQL WAL disk usage and archive status"
+    mode: "OBSERVE"
+    risk_class: "LOW"
+    supported_targets: ["container", "database"]
+    executor: "postgres_executor"
+    verifier: "postgres_verifier"
+    requires_human_approval: false
+    parameters_schema: {}
+
+  postgres.wal.archive_cleanup:
+    description: "Safely clean up archived WAL files after verifying replication status"
+    mode: "MUTATE_HIGH_RISK"
+    risk_class: "HIGH"
+    supported_targets: ["container", "database"]
+    executor: "postgres_executor"
+    verifier: "postgres_verifier"
+    requires_human_approval: true
+    parameters_schema:
+      retention_boundary: { type: "string" }
+
+  redis.eviction_policy.update:
+    description: "Update Redis maxmemory-policy eviction setting"
+    mode: "MUTATE_REVERSIBLE"
+    risk_class: "MEDIUM"
+    supported_targets: ["container", "cache"]
+    executor: "redis_executor"
+    verifier: "redis_verifier"
+    requires_human_approval: false
+    parameters_schema:
+      policy: { type: "string" }
+
+  workload.replicas.scale:
+    description: "Scale Kubernetes deployment replica count"
+    mode: "MUTATE_REVERSIBLE"
+    risk_class: "MEDIUM"
+    supported_targets: ["workload", "deployment"]
+    executor: "kubernetes_executor"
+    verifier: "kubernetes_verifier"
+    requires_human_approval: false
+    parameters_schema:
+      replicas: { type: "integer", minimum: 1 }
+
+  workload.resources.patch:
+    description: "Patch Kubernetes workload CPU/Memory limits"
+    mode: "MUTATE_REVERSIBLE"
+    risk_class: "MEDIUM"
+    supported_targets: ["workload", "container", "deployment"]
+    executor: "kubernetes_executor"
+    verifier: "kubernetes_verifier"
+    requires_human_approval: false
+    parameters_schema:
+      resource_type: { type: "string", enum: ["cpu", "memory"] }
+      limit_value: { type: "string" }
+
+  workload.rollout.restart:
+    description: "Perform rolling restart of workload preserving floor availability"
+    mode: "MUTATE_REVERSIBLE"
+    risk_class: "MEDIUM"
+    supported_targets: ["workload", "deployment", "service"]
+    executor: "kubernetes_executor"
+    verifier: "kubernetes_verifier"
+    requires_human_approval: false
+    parameters_schema: {}
+
+  container.restart:
+    description: "Restart Docker container"
+    mode: "MUTATE_REVERSIBLE"
+    risk_class: "MEDIUM"
+    supported_targets: ["container", "service"]
+    executor: "docker_executor"
+    verifier: "service_health"
+    requires_human_approval: false
+    parameters_schema: {}
+
+  tls.certificate.renew:
+    description: "Trigger TLS certificate renewal via cert-manager or emulator"
+    mode: "MUTATE_REVERSIBLE"
+    risk_class: "MEDIUM"
+    supported_targets: ["certificate", "ingress", "workload"]
+    executor: "cert_manager_executor"
+    verifier: "tls_verifier"
+    requires_human_approval: false
+    parameters_schema:
+      secret_name: { type: "string" }
+      domain: { type: "string" }
+
+  node.cordon:
+    description: "Mark node unschedulable in Kubernetes"
+    mode: "MUTATE_REVERSIBLE"
+    risk_class: "MEDIUM"
+    supported_targets: ["node"]
+    executor: "kubernetes_executor"
+    verifier: "kubernetes_verifier"
+    requires_human_approval: false
+    parameters_schema:
+      node_name: { type: "string" }
+
+  node.drain:
+    description: "Evict pods from node within disruption budget"
+    mode: "MUTATE_HIGH_RISK"
+    risk_class: "HIGH"
+    supported_targets: ["node"]
+    executor: "kubernetes_executor"
+    verifier: "kubernetes_verifier"
+    requires_human_approval: true
+    parameters_schema:
+      node_name: { type: "string" }
+
+  cilium.policy.inspect:
+    description: "Inspect Cilium network policies and drop metrics"
+    mode: "OBSERVE"
+    risk_class: "LOW"
+    supported_targets: ["network", "workload"]
+    executor: "cilium_executor"
+    verifier: "network_verifier"
+    requires_human_approval: false
+    parameters_schema: {}
+
+  cilium.policy.reload:
+    description: "Reload Cilium network policy configuration"
+    mode: "MUTATE_REVERSIBLE"
+    risk_class: "MEDIUM"
+    supported_targets: ["network", "workload"]
+    executor: "cilium_executor"
+    verifier: "network_verifier"
+    requires_human_approval: false
+    parameters_schema:
+      policy_name: { type: "string" }
+
+  ingress.rate_limit.patch:
+    description: "Update ingress rate limiting annotation"
+    mode: "MUTATE_REVERSIBLE"
+    risk_class: "MEDIUM"
+    supported_targets: ["ingress", "workload"]
+    executor: "kubernetes_executor"
+    verifier: "kubernetes_verifier"
+    requires_human_approval: false
+    parameters_schema:
+      rate_limit_rps: { type: "integer", minimum: 1 }
+
+  grpc.workload.restart:
+    description: "Perform rolling restart of gRPC stream workers"
+    mode: "MUTATE_REVERSIBLE"
+    risk_class: "MEDIUM"
+    supported_targets: ["workload", "service"]
+    executor: "kubernetes_executor"
+    verifier: "kubernetes_verifier"
+    requires_human_approval: false
+    parameters_schema: {}
+
+  ceph.health.inspect:
+    description: "Inspect Ceph storage cluster health and OSD status"
+    mode: "OBSERVE"
+    risk_class: "LOW"
+    supported_targets: ["storage", "node"]
+    executor: "ceph_executor"
+    verifier: "storage_verifier"
+    requires_human_approval: false
+    parameters_schema: {}
+
+  storage.snapshot.restore:
+    description: "Restore volume snapshot for corrupt storage"
+    mode: "MUTATE_HIGH_RISK"
+    risk_class: "HIGH"
+    supported_targets: ["storage", "volume"]
+    executor: "ceph_executor"
+    verifier: "storage_verifier"
+    requires_human_approval: true
+    parameters_schema:
+      snapshot_id: { type: "string" }
