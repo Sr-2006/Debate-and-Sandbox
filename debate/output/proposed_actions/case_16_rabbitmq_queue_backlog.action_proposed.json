@@ -1,0 +1,23 @@
+{
+  "event_type": "action.proposed",
+  "incident_id": "case_16_rabbitmq_queue_backlog",
+  "problem": "",
+  "correlation_id": "5ae17d6f-542d-4a3a-9e73-7eb7bb9fc234",
+  "fingerprint": null,
+  "timestamp": "2026-09-01T15:54:01.341360+00:00",
+  "payload": {
+    "consensus_rc": "Identify and mitigate the root cause of slow consumer processing.",
+    "primary_component": "Network",
+    "action_commands": [
+      "kubectl scale deployment/email-consumer --replicas=4"
+    ],
+    "runbook": "Implement network optimization and consumer processing improvements.",
+    "confidence": 88,
+    "execution_tier": "TIER_1_AUTONOMOUS_EXECUTION",
+    "safety_violation": false,
+    "veto_reason": null,
+    "consensus_quality": "HIGH",
+    "round_2_executed": false,
+    "total_latency_seconds": 38.29
+  }
+}

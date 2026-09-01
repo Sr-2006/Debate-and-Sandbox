@@ -1,0 +1,54 @@
+{
+  "system_context": {
+    "objective": "Perform automated Multi-Agent Root Cause Analysis (RCA) and recommend corrective actions.",
+    "environment": "Kubernetes (EKS), Spring Boot, RabbitMQ",
+    "current_health_score": 50,
+    "active_warnings": 12
+  },
+  "incident_event": {
+    "incident_id": "case_03_guided_pivot",
+    "target_service": "order-processor",
+    "priority_score": 85.0,
+    "severity": "HIGH",
+    "occurrence_count": 450
+  },
+  "infrastructure_topology": {
+    "role": "order-queue-consumer",
+    "downstream_dependencies": [
+      "rabbitmq-broker"
+    ],
+    "exposed_ports": ["8083:8083"]
+  },
+  "service_health_status": {
+    "docker_status": "running",
+    "health_check": "degraded",
+    "dependency_states": {
+      "rabbitmq-broker": {
+        "status": "running",
+        "health": "healthy"
+      }
+    }
+  },
+  "telemetry_evidence": {
+    "log_cluster_template": "WARN [order-processor] Queue prefetch limit reached; connection dropped by peer.",
+    "log_samples": [
+      {
+        "timestamp": "2026-08-10T17:10:00.000Z",
+        "level": "WARN",
+        "content": "[order-processor] AmqpIOException: Connection reset by RabbitMQ broker due to channel channel-max limit (2048).",
+        "trace_id": "trace-pivot-03",
+        "span_id": "span-amqp"
+      }
+    ],
+    "metrics_snapshot": [
+      {
+        "timestamp": "2026-08-10T17:10:00.000Z",
+        "rabbitmq_channels_open": 2048
+      }
+    ]
+  },
+  "injected_chaos_context": {
+    "active_infrastructure_mutations": "Channel max configuration bottleneck on RabbitMQ connection pool."
+  },
+  "agent_instruction": "Analyze RabbitMQ channel exhaustion and output remediation steps."
+}

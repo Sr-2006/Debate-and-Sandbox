@@ -1,0 +1,98 @@
+{
+    "incident_id": "case_20_grpc_stream_deadlock",
+    "timestamp": "2026-09-01T21:26:34.291057",
+    "problem": "### INCIDENT CONTEXT [case_20_grpc_stream_deadlock]\n- **Target Service**: `stream-gateway` | **Severity**: `HIGH`\n- **Role**: bidi-streaming-grpc\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: HTTP/2 stream flow control window exhaustion in gRPC bidirectional stream.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `ERROR [stream-gateway] rpc error: code = ResourceExhausted desc = gRPC HTTP/2 stream flow control window blocked.`\n- **Top Log Samples**:\n  - [2026-08-10T18:45:00.000Z] ERROR: [stream-gateway] gRPC stream deadlock: HTTP/2 flow control window 0 bytes available on stream 103.\n- **Metrics**: grpc_active_streams=1000, http2_flow_control_window_bytes=0\n\n### TASK INSTRUCTION\nAnalyze gRPC HTTP/2 stream flow control deadlock and output safe stream reset steps.",
+    "round_1": {
+        "optimist": {
+            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Recovery Engineer focused on rapid service restoration.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot max 15 words>\", \"primary_component\": \"<one of: Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"evidence\": \"<exact log line or metric you relied on>\", \"triage\": \"<0-5 min actions>\", \"stab\": \"<5-60 min actions>\", \"rca\": \"<root cause grounded in the evidence>\", \"conf\": 0.95}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be one of the listed values.\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Focus on fastest safe recovery. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_20_grpc_stream_deadlock]\n- **Target Service**: `stream-gateway` | **Severity**: `HIGH`\n- **Role**: bidi-streaming-grpc\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: HTTP/2 stream flow control window exhaustion in gRPC bidirectional stream.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `ERROR [stream-gateway] rpc error: code = ResourceExhausted desc = gRPC HTTP/2 stream flow control window blocked.`\n- **Top Log Samples**:\n  - [2026-08-10T18:45:00.000Z] ERROR: [stream-gateway] gRPC stream deadlock: HTTP/2 flow control window 0 bytes available on stream 103.\n- **Metrics**: grpc_active_streams=1000, http2_flow_control_window_bytes=0\n\n### TASK INSTRUCTION\nAnalyze gRPC HTTP/2 stream flow control deadlock and output safe stream reset steps.",
+            "response": {
+                "logic": "Reset gRPC stream due to flow control deadlock.",
+                "primary_component": "Network",
+                "evidence": "ERROR [stream-gateway] gRPC stream deadlock: HTTP/2 flow control window 0 bytes available on stream 103.",
+                "triage": "Reset the gRPC stream immediately.",
+                "stab": "Implement a retry mechanism for the gRPC stream to ensure it is reset safely.",
+                "rca": "HTTP/2 flow control window exhaustion caused a deadlock in the gRPC stream, leading to the error.",
+                "conf": 0.95
+            },
+            "latency": 17.74
+        },
+        "critic": {
+            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Reliability Engineer focused on operational risk, safety, and preventing secondary outages.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot safety check max 15 words>\", \"primary_component\": \"<one of: Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"evidence\": \"<exact log line or metric you relied on>\", \"triage\": \"<0-5 min risk-mitigated actions>\", \"stab\": \"<5-60 min stabilization steps>\", \"rca\": \"<root cause grounded in the evidence>\", \"conf\": 0.90}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be one of the listed values.\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Focus on zero data loss and safe rollbacks. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_20_grpc_stream_deadlock]\n- **Target Service**: `stream-gateway` | **Severity**: `HIGH`\n- **Role**: bidi-streaming-grpc\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: HTTP/2 stream flow control window exhaustion in gRPC bidirectional stream.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `ERROR [stream-gateway] rpc error: code = ResourceExhausted desc = gRPC HTTP/2 stream flow control window blocked.`\n- **Top Log Samples**:\n  - [2026-08-10T18:45:00.000Z] ERROR: [stream-gateway] gRPC stream deadlock: HTTP/2 flow control window 0 bytes available on stream 103.\n- **Metrics**: grpc_active_streams=1000, http2_flow_control_window_bytes=0\n\n### TASK INSTRUCTION\nAnalyze gRPC HTTP/2 stream flow control deadlock and output safe stream reset steps.",
+            "response": {
+                "logic": "Reset gRPC stream to prevent deadlock and resume normal operation.",
+                "primary_component": "Network",
+                "evidence": "ERROR [stream-gateway] gRPC stream deadlock: HTTP/2 flow control window 0 bytes available on stream 103.",
+                "triage": "Roll back to previous known good state, reset gRPC stream.",
+                "stab": "Reset gRPC stream, monitor for stability, and resume normal service operations.",
+                "rca": "HTTP/2 flow control window exhaustion caused by resource exhaustion, leading to deadlock.",
+                "conf": 0.9
+            },
+            "latency": 12.83
+        },
+        "fact_checker": {
+            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Verification Engineer focused on log and telemetry evidence validation.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot evidence verification max 15 words>\", \"primary_component\": \"<one of: Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"evidence\": \"<exact log line or metric you relied on>\", \"triage\": \"<0-5 min evidence checks>\", \"stab\": \"<5-60 min metric validations>\", \"rca\": \"<grounded root cause analysis>\", \"conf\": 0.95}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be one of the listed values.\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Base analysis strictly on provided logs and metrics. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_20_grpc_stream_deadlock]\n- **Target Service**: `stream-gateway` | **Severity**: `HIGH`\n- **Role**: bidi-streaming-grpc\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: HTTP/2 stream flow control window exhaustion in gRPC bidirectional stream.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `ERROR [stream-gateway] rpc error: code = ResourceExhausted desc = gRPC HTTP/2 stream flow control window blocked.`\n- **Top Log Samples**:\n  - [2026-08-10T18:45:00.000Z] ERROR: [stream-gateway] gRPC stream deadlock: HTTP/2 flow control window 0 bytes available on stream 103.\n- **Metrics**: grpc_active_streams=1000, http2_flow_control_window_bytes=0\n\n### TASK INSTRUCTION\nAnalyze gRPC HTTP/2 stream flow control deadlock and output safe stream reset steps.",
+            "response": {
+                "logic": "Analyze gRPC deadlock to reset streams safely.",
+                "primary_component": "Network",
+                "evidence": "ERROR [stream-gateway] gRPC stream deadlock: HTTP/2 flow control window 0 bytes available on stream 103.",
+                "triage": "Check active streams and flow control window.",
+                "stab": "Validate stream reset steps.",
+                "rca": "Identify root cause of flow control window exhaustion.",
+                "conf": 0.95
+            },
+            "latency": 14.0
+        }
+    },
+    "consensus": {
+        "score": 0.83,
+        "threshold": 0.85,
+        "debate_required": false
+    },
+    "round_2": null,
+    "orchestrator": {
+        "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are the Lead Incident Commander. Synthesize agent perspectives into ONE definitive JSON decision.\nOutput ONLY valid JSON matching this exact schema:\n{\"consensus_rc\": \"<Root Cause>\", \"primary_component\": \"<Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"consensus_quality\": \"<HIGH|MEDIUM|LOW>\", \"final_triage\": \"<Immediate Fix>\", \"final_stab\": \"<Stabilization Plan>\", \"final_rca\": \"<Long-Term Prevention>\", \"action_commands\": [\"<exact_remediation_command_1>\"], \"confidence\": <0-100 integer>, \"reasoning\": \"<1-sentence justification citing evidence>\"}\n\nRules:\n- Keep total output under 120 words.\n- primary_component MUST be one of the listed values and MUST match the component the majority of agents identified.\n- action_commands MUST be safe, executable, and reference the implicated service/component from the telemetry. NEVER output destructive commands (no delete/drop/flushall/rm -rf/scale to 0).\n- Calculate confidence from EVIDENCE AGREEMENT: if agents converge on the same grounded component, confidence >= 90; if they diverge, confidence <= 60.\n- Pick the technically strongest, safest path. Output strictly valid JSON.\n\n[USER PROMPT]:\nIncident Summary:\n### INCIDENT CONTEXT [case_20_grpc_stream_deadlock]\n- **Target Service**: `stream-gateway` | **Severity**: `HIGH`\n\nCompressed Agent State:\n{\"workers\": {\"optimist\": {\"component\": \"Network\", \"root_cause\": \"HTTP/2 flow control window exhaustion caused a deadlock in the gRPC stream, leading to the error.\", \"confidence\": 0.95, \"evidence\": \"ERROR [stream-gateway] gRPC stream deadlock: HTTP/2 flow control window 0 bytes available on stream 103.\", \"triage\": \"Reset the gRPC stream immediately.\", \"safety_flag\": false}, \"critic\": {\"component\": \"Network\", \"root_cause\": \"HTTP/2 flow control window exhaustion caused by resource exhaustion, leading to deadlock.\", \"confidence\": 0.9, \"evidence\": \"ERROR [stream-gateway] gRPC stream deadlock: HTTP/2 flow control window 0 bytes available on stream 103.\", \"triage\": \"Roll back to previous known good state, reset gRPC stream.\", \"safety_flag\": false}, \"fact_checker\": {\"component\": \"Network\", \"root_cause\": \"Identify root cause of flow control window exhaustion.\", \"confidence\": 0.95, \"evidence\": \"ERROR [stream-gateway] gRPC stream deadlock: HTTP/2 flow control window 0 bytes available on stream 103.\", \"triage\": \"Check active streams and flow control window.\", \"safety_flag\": false}}}\n",
+        "technical_solution": {
+            "consensus_rc": "HTTP/2 flow control window exhaustion caused a deadlock in the gRPC stream.",
+            "primary_component": "Network",
+            "consensus_quality": "HIGH",
+            "final_triage": "Reset the gRPC stream immediately.",
+            "final_stab": "Monitor active streams and adjust flow control window settings to prevent future deadlocks.",
+            "final_rca": "Implement flow control window monitoring and alerting to proactively manage resource exhaustion.",
+            "action_commands": [
+                "gRPC stream reset"
+            ],
+            "confidence": 95,
+            "reasoning": "All agents identified the same root cause and component, with high confidence.",
+            "calculated_confidence": 83,
+            "safety_violation": false,
+            "scoring_metadata": {
+                "safety_violation": false,
+                "blocked_command": null,
+                "veto_reason": null,
+                "semantic_similarity": 0.49,
+                "outlier_agent": "fact_checker",
+                "component_agreement": 1.0,
+                "evidence_grounding": 0.756,
+                "divergence_penalty": 0,
+                "evidence_mapping_penalty": 0,
+                "schema_bonus": 10,
+                "evidence_gate": false,
+                "action_risk": "medium",
+                "execution_mode": "autonomous",
+                "parse_failures": 0,
+                "non_executable_commands": true,
+                "telemetry_hazard_detected": false,
+                "non_executable_deduction": 5,
+                "difficulty_prior": 1.0
+            }
+        },
+        "confidence": "83%",
+        "latency": 20.37
+    },
+    "performance": {
+        "round1_time": 17.74,
+        "round2_time": 0.0,
+        "orchestrator_time": 20.37,
+        "total_pipeline_time": 38.22
+    }
+}

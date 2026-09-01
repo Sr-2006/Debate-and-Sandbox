@@ -1,0 +1,23 @@
+{
+  "event_type": "action.proposed",
+  "incident_id": "case_14_disk_pressure_wal",
+  "problem": "",
+  "correlation_id": "15b3e84f-971f-4b2e-b8fa-b97f020a9be3",
+  "fingerprint": null,
+  "timestamp": "2026-09-01T15:52:31.720278+00:00",
+  "payload": {
+    "consensus_rc": "WAL directory is full, causing write failures.",
+    "primary_component": "Disk",
+    "action_commands": [
+      "pg_wal/00000001000000A1000000F2"
+    ],
+    "runbook": "Implement disk space monitoring and alerting, and configure automatic archiving of WAL files.",
+    "confidence": 65,
+    "execution_tier": "TIER_2_SHADOW_SANDBOX",
+    "safety_violation": false,
+    "veto_reason": null,
+    "consensus_quality": "HIGH",
+    "round_2_executed": false,
+    "total_latency_seconds": 41.83
+  }
+}

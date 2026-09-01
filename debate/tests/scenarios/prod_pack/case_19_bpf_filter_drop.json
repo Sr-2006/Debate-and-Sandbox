@@ -1,0 +1,47 @@
+{
+  "system_context": {
+    "objective": "Perform automated Multi-Agent Root Cause Analysis (RCA) and recommend corrective actions.",
+    "environment": "Kubernetes (EKS), Cilium eBPF CNI",
+    "current_health_score": 45,
+    "active_warnings": 11
+  },
+  "incident_event": {
+    "incident_id": "case_19_bpf_filter_drop",
+    "target_service": "mesh-proxy",
+    "priority_score": 86.0,
+    "severity": "HIGH",
+    "occurrence_count": 3400
+  },
+  "infrastructure_topology": {
+    "role": "ebpf-dataplane-filter",
+    "downstream_dependencies": [],
+    "exposed_ports": ["4240:4240"]
+  },
+  "service_health_status": {
+    "docker_status": "running",
+    "health_check": "degraded",
+    "dependency_states": {}
+  },
+  "telemetry_evidence": {
+    "log_cluster_template": "ERROR [mesh-proxy] bpf_map_lookup_elem failed; Cilium eBPF packet drop policy active.",
+    "log_samples": [
+      {
+        "timestamp": "2026-08-10T18:40:00.000Z",
+        "level": "ERROR",
+        "content": "[mesh-proxy] Cilium BPF datapath: Policy drop (Identity 104 -> Identity 502) packet dropped by eBPF map filter.",
+        "trace_id": "trace-ebpf-19",
+        "span_id": "span-bpf-drop"
+      }
+    ],
+    "metrics_snapshot": [
+      {
+        "timestamp": "2026-08-10T18:40:00.000Z",
+        "cilium_drop_count_total": 3400
+      }
+    ]
+  },
+  "injected_chaos_context": {
+    "active_infrastructure_mutations": "Cilium eBPF network policy map entry drop causing inter-pod packet rejection."
+  },
+  "agent_instruction": "Analyze eBPF network policy packet drops and output Cilium policy reload commands."
+}

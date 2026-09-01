@@ -1,0 +1,48 @@
+{
+  "system_context": {
+    "objective": "Perform automated Multi-Agent Root Cause Analysis (RCA) and recommend corrective actions.",
+    "environment": "Kubernetes (EKS), Redis 7.0 Cache Cluster",
+    "current_health_score": 45,
+    "active_warnings": 8
+  },
+  "incident_event": {
+    "incident_id": "case_12_redis_memory_eviction",
+    "target_service": "redis-cache",
+    "priority_score": 88.0,
+    "severity": "HIGH",
+    "occurrence_count": 650
+  },
+  "infrastructure_topology": {
+    "role": "in-memory-session-store",
+    "downstream_dependencies": [],
+    "exposed_ports": ["6379:6379"]
+  },
+  "service_health_status": {
+    "docker_status": "running",
+    "health_check": "degraded",
+    "dependency_states": {}
+  },
+  "telemetry_evidence": {
+    "log_cluster_template": "OOM [redis-cache] OOM command not allowed when used memory > 'maxmemory'",
+    "log_samples": [
+      {
+        "timestamp": "2026-08-10T18:05:00.000Z",
+        "level": "ERROR",
+        "content": "[redis-cache] OOM command not allowed when used memory > 'maxmemory'. Eviction policy volatile-lru active.",
+        "trace_id": "trace-redis-12",
+        "span_id": "span-redis-oom"
+      }
+    ],
+    "metrics_snapshot": [
+      {
+        "timestamp": "2026-08-10T18:05:00.000Z",
+        "used_memory_bytes": 2147483648,
+        "maxmemory_bytes": 2147483648
+      }
+    ]
+  },
+  "injected_chaos_context": {
+    "active_infrastructure_mutations": "Redis cache memory cap maxmemory reached causing session eviction errors."
+  },
+  "agent_instruction": "Analyze Redis maxmemory exhaustion and output safe eviction policy adjustments."
+}

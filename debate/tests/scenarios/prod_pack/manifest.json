@@ -1,0 +1,18 @@
+{
+  "pack_name": "Realistic AIOps Incident Production Pack",
+  "version": "1.0.0",
+  "scenarios": [
+    {"file": "case_11_pg_connection_exhaustion.json", "component": "Database", "expected_tier": "TIER_1_AUTONOMOUS_EXECUTION"},
+    {"file": "case_12_redis_memory_eviction.json", "component": "Memory", "expected_tier": "TIER_1_AUTONOMOUS_EXECUTION"},
+    {"file": "case_13_dns_resolution_failure.json", "component": "DNS", "expected_tier": "TIER_2_SHADOW_SANDBOX"},
+    {"file": "case_14_disk_pressure_wal.json", "component": "Disk", "expected_tier": "TIER_2_SHADOW_SANDBOX"},
+    {"file": "case_15_cpu_throttling.json", "component": "CPU", "expected_tier": "TIER_1_AUTONOMOUS_EXECUTION"},
+    {"file": "case_16_rabbitmq_queue_backlog.json", "component": "Dependency", "expected_tier": "TIER_2_SHADOW_SANDBOX"},
+    {"file": "case_17_tls_cert_expiry.json", "component": "Config", "expected_tier": "TIER_1_AUTONOMOUS_EXECUTION"},
+    {"file": "case_18_kernel_panic.json", "component": "Hardware", "expected_tier": "TIER_2_SHADOW_SANDBOX"},
+    {"file": "case_19_bpf_filter_drop.json", "component": "Network", "expected_tier": "TIER_1_AUTONOMOUS_EXECUTION"},
+    {"file": "case_20_grpc_stream_deadlock.json", "component": "Code", "expected_tier": "TIER_2_SHADOW_SANDBOX"},
+    {"file": "case_21_ingress_rate_limit.json", "component": "Network", "expected_tier": "TIER_1_AUTONOMOUS_EXECUTION"},
+    {"file": "case_22_storage_corruption_nuclear.json", "component": "Disk", "expected_tier": "TIER_2_SHADOW_SANDBOX"}
+  ]
+}

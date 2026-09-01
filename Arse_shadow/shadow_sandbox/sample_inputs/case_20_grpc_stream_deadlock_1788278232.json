@@ -1,0 +1,17 @@
+{
+    "incident_id": "case_20_grpc_stream_deadlock",
+    "problem": "",
+    "orchestrator": {
+        "technical_solution": {
+            "action_commands": [
+                "gRPC stream reset"
+            ],
+            "confidence": 83,
+            "calculated_confidence": 83,
+            "safety_violation": false
+        }
+    },
+    "root_cause_analysis": {
+        "summary": "HTTP/2 flow control window exhaustion caused a deadlock in the gRPC stream."
+    }
+}

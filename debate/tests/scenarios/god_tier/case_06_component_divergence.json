@@ -1,0 +1,48 @@
+{
+  "system_context": {
+    "objective": "Perform automated Multi-Agent Root Cause Analysis (RCA) and recommend corrective actions.",
+    "environment": "Kubernetes (EKS), Node.js, NVMe, Calico CNI",
+    "current_health_score": 35,
+    "active_warnings": 14
+  },
+  "incident_event": {
+    "incident_id": "case_06_component_divergence",
+    "target_service": "storage-gateway",
+    "priority_score": 93.0,
+    "severity": "CRITICAL",
+    "occurrence_count": 8900
+  },
+  "infrastructure_topology": {
+    "role": "block-storage-proxy",
+    "downstream_dependencies": [],
+    "exposed_ports": ["9000:9000"]
+  },
+  "service_health_status": {
+    "docker_status": "running",
+    "health_check": "failing",
+    "dependency_states": {}
+  },
+  "telemetry_evidence": {
+    "log_cluster_template": "ERROR [storage-gateway] Network socket timeout on Calico veth interface while flushing NVMe iops queue.",
+    "log_samples": [
+      {
+        "timestamp": "2026-08-10T17:25:00.000Z",
+        "level": "ERROR",
+        "content": "[storage-gateway] Contradictory signals: Network TCP drop on port 9000 vs NVMe disk block IOPS queue stall.",
+        "trace_id": "trace-div-06",
+        "span_id": "span-div"
+      }
+    ],
+    "metrics_snapshot": [
+      {
+        "timestamp": "2026-08-10T17:25:00.000Z",
+        "network_drop_rate": 50.0,
+        "disk_iops_utilization_percent": 99.0
+      }
+    ]
+  },
+  "injected_chaos_context": {
+    "active_infrastructure_mutations": "Ambiguous symptoms causing Agent A to diagnose Network failure while Agent B diagnoses Disk I/O failure."
+  },
+  "agent_instruction": "Analyze storage gateway telemetry and identify the primary component."
+}

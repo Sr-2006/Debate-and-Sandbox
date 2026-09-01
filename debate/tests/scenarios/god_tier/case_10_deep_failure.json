@@ -1,0 +1,49 @@
+{
+  "system_context": {
+    "objective": "Perform automated Multi-Agent Root Cause Analysis (RCA) and recommend corrective actions.",
+    "environment": "Kubernetes (EKS), Mixed Multilingual Legacy System",
+    "current_health_score": 15,
+    "active_warnings": 40
+  },
+  "incident_event": {
+    "incident_id": "case_10_deep_failure",
+    "target_service": "legacy-monolith",
+    "priority_score": 99.9,
+    "severity": "CRITICAL",
+    "occurrence_count": 99999
+  },
+  "infrastructure_topology": {
+    "role": "legacy-core-system",
+    "downstream_dependencies": [],
+    "exposed_ports": ["8000:8000"]
+  },
+  "service_health_status": {
+    "docker_status": "running",
+    "health_check": "failing",
+    "dependency_states": {}
+  },
+  "telemetry_evidence": {
+    "log_cluster_template": "FATAL [legacy-monolith] Contradictory corruption across kernel, network, disk, memory, and database subsystem.",
+    "log_samples": [
+      {
+        "timestamp": "2026-08-10T17:45:00.000Z",
+        "level": "FATAL",
+        "content": "[legacy-monolith] Unresolvable conflicting telemetry: Kernel panic vs DB deadlocks vs Network drops vs BPF filter errors.",
+        "trace_id": "trace-deep-10",
+        "span_id": "span-chaos-all"
+      }
+    ],
+    "metrics_snapshot": [
+      {
+        "timestamp": "2026-08-10T17:45:00.000Z",
+        "cpu_percent": 100.0,
+        "memory_percent": 100.0,
+        "disk_percent": 100.0
+      }
+    ]
+  },
+  "injected_chaos_context": {
+    "active_infrastructure_mutations": "Simultaneous multi-subsystem catastrophic failure producing contradictory agent hypotheses."
+  },
+  "agent_instruction": "Attempt to analyze multi-subsystem catastrophic failure and output remediation steps."
+}

@@ -1,0 +1,1073 @@
+[
+  {
+    "incident_id": "case_11_pg_connection_exhaustion",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-postgres-db",
+    "timestamp": "2026-08-25T04:16:28.562804+00:00",
+    "parameters": {
+      "resource_type": "postgres_connections",
+      "connection_count": 100
+    },
+    "before_state": {
+      "target": "shadow-postgres-db",
+      "status": "running",
+      "running": true,
+      "paused": false,
+      "memory_limit_bytes": 536870912,
+      "nano_cpus": 0,
+      "cpu_quota": 0,
+      "captured_at": "2026-08-25T04:16:28.107458+00:00",
+      "held_connections_count": 0
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_11_pg_connection_exhaustion",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-postgres-db",
+    "timestamp": "2026-08-25T05:33:33.925013+00:00",
+    "parameters": {
+      "resource_type": "postgres_connections",
+      "connection_count": 100
+    },
+    "before_state": {
+      "target": "shadow-postgres-db",
+      "status": "running",
+      "running": true,
+      "paused": false,
+      "memory_limit_bytes": 536870912,
+      "nano_cpus": 0,
+      "cpu_quota": 0,
+      "captured_at": "2026-08-25T05:33:33.310278+00:00",
+      "held_connections_count": 0
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_22_storage_corruption_nuclear",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-payment-service",
+    "timestamp": "2026-09-01T05:08:53.006443+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-payment-service",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_22_storage_corruption_nuclear",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-payment-service",
+    "timestamp": "2026-09-01T05:08:54.192509+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-payment-service",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_01_semantic_consensus",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-redis",
+    "timestamp": "2026-09-01T05:31:11.927681+00:00",
+    "parameters": {
+      "resource_type": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "before_state": {
+      "target": "shadow-redis",
+      "fault": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_01_semantic_consensus",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-redis",
+    "timestamp": "2026-09-01T05:38:27.410072+00:00",
+    "parameters": {
+      "resource_type": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "before_state": {
+      "target": "shadow-redis",
+      "fault": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_01_semantic_consensus",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-redis",
+    "timestamp": "2026-09-01T05:46:34.750969+00:00",
+    "parameters": {
+      "resource_type": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "before_state": {
+      "target": "shadow-redis",
+      "fault": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_02_safety_veto",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T05:46:38.346922+00:00",
+    "parameters": {
+      "resource_type": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_03_guided_pivot",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-rabbitmq",
+    "timestamp": "2026-09-01T05:46:44.264285+00:00",
+    "parameters": {
+      "resource_type": "postgres_connections",
+      "connection_count": 100
+    },
+    "before_state": {
+      "target": "shadow-rabbitmq",
+      "fault": "exhaust_postgres_connections",
+      "requested": 100,
+      "opened_held": 100
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_04_selective_resample",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-postgres-db",
+    "timestamp": "2026-09-01T05:46:52.728242+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-postgres-db",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_05_mttr_decay",
+    "fault_type": "apply_queue_pressure",
+    "target": "shadow-redis",
+    "timestamp": "2026-09-01T05:46:54.271993+00:00",
+    "parameters": {
+      "backlog_size": 1000
+    },
+    "before_state": {
+      "target": "shadow-redis",
+      "fault": "rabbitmq_backlog",
+      "message_count": 1000,
+      "exit_code": 127
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_06_component_divergence",
+    "fault_type": "apply_queue_pressure",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T05:46:58.328656+00:00",
+    "parameters": {
+      "backlog_size": 1000
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "rabbitmq_backlog",
+      "message_count": 1000,
+      "exit_code": 127
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_07_evidence_gap",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-redis",
+    "timestamp": "2026-09-01T05:47:11.138321+00:00",
+    "parameters": {
+      "resource_type": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "before_state": {
+      "target": "shadow-redis",
+      "fault": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_08_schema_violation",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-postgres-db",
+    "timestamp": "2026-09-01T05:47:14.628279+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-postgres-db",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_09_borderline_route",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T05:47:17.316417+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_10_deep_failure",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T05:47:30.691160+00:00",
+    "parameters": {
+      "resource_type": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_11_pg_connection_exhaustion",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-postgres-db",
+    "timestamp": "2026-09-01T05:47:33.303962+00:00",
+    "parameters": {
+      "resource_type": "postgres_connections",
+      "connection_count": 100
+    },
+    "before_state": {
+      "target": "shadow-postgres-db",
+      "fault": "exhaust_postgres_connections",
+      "requested": 100,
+      "opened_held": 100
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_12_redis_eviction",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-redis",
+    "timestamp": "2026-09-01T05:47:34.740513+00:00",
+    "parameters": {
+      "resource_type": "memory_limit",
+      "limit_mb": 64
+    },
+    "before_state": {
+      "target": "shadow-redis",
+      "fault": "memory_limit",
+      "limit_mb": 64
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_12_redis_memory_eviction",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-redis",
+    "timestamp": "2026-09-01T05:47:37.066053+00:00",
+    "parameters": {
+      "resource_type": "memory_limit",
+      "limit_mb": 64
+    },
+    "before_state": {
+      "target": "shadow-redis",
+      "fault": "memory_limit",
+      "limit_mb": 64
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_13_dns_resolution_failure",
+    "fault_type": "apply_latency",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T05:47:41.433004+00:00",
+    "parameters": {
+      "delay_ms": 500
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "network_latency",
+      "latency_ms": 500,
+      "exit_code": 127,
+      "output": "OCI runtime exec failed: exec failed: unable to start container process: exec: \"tc\": executable file not found in $PATH\r\n"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_14_disk_pressure_wal",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-postgres-db",
+    "timestamp": "2026-09-01T05:47:45.556504+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-postgres-db",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_15_cpu_throttling",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T05:47:47.180441+00:00",
+    "parameters": {
+      "resource_type": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_16_rabbitmq_consumer",
+    "fault_type": "apply_queue_pressure",
+    "target": "shadow-rabbitmq",
+    "timestamp": "2026-09-01T05:47:50.644657+00:00",
+    "parameters": {
+      "backlog_size": 1000
+    },
+    "before_state": {
+      "target": "shadow-rabbitmq",
+      "fault": "rabbitmq_backlog",
+      "message_count": 1000,
+      "exit_code": 1
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_16_rabbitmq_queue_backlog",
+    "fault_type": "apply_queue_pressure",
+    "target": "shadow-rabbitmq",
+    "timestamp": "2026-09-01T05:47:56.076921+00:00",
+    "parameters": {
+      "backlog_size": 1000
+    },
+    "before_state": {
+      "target": "shadow-rabbitmq",
+      "fault": "rabbitmq_backlog",
+      "message_count": 1000,
+      "exit_code": 1
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_17_tls_cert_expiry",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T05:48:02.044793+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_18_kernel_panic",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T05:48:04.473315+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_19_bpf_filter_drop",
+    "fault_type": "apply_latency",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T05:48:06.903746+00:00",
+    "parameters": {
+      "delay_ms": 500
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "network_latency",
+      "latency_ms": 500,
+      "exit_code": 127,
+      "output": "OCI runtime exec failed: exec failed: unable to start container process: exec: \"tc\": executable file not found in $PATH\r\n"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_20_grpc_stream_deadlock",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T05:48:09.544427+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_21_ingress_rate_limit",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T05:48:12.184940+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_22_storage_corruption_nuclear",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-payment-service",
+    "timestamp": "2026-09-01T05:48:14.162090+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-payment-service",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": true
+  },
+  {
+    "incident_id": "case_01_semantic_consensus",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-redis",
+    "timestamp": "2026-09-01T06:14:33.020460+00:00",
+    "parameters": {
+      "resource_type": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "before_state": {
+      "target": "shadow-redis",
+      "fault": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_02_safety_veto",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T06:14:34.932838+00:00",
+    "parameters": {
+      "resource_type": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_03_guided_pivot",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-rabbitmq",
+    "timestamp": "2026-09-01T06:14:37.037840+00:00",
+    "parameters": {
+      "resource_type": "postgres_connections",
+      "connection_count": 100
+    },
+    "before_state": {
+      "target": "shadow-rabbitmq",
+      "fault": "exhaust_postgres_connections",
+      "requested": 100,
+      "opened_held": 100
+    },
+    "active": true
+  },
+  {
+    "incident_id": "case_04_selective_resample",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-postgres-db",
+    "timestamp": "2026-09-01T06:14:41.665873+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-postgres-db",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": true
+  },
+  {
+    "incident_id": "case_05_mttr_decay",
+    "fault_type": "apply_queue_pressure",
+    "target": "shadow-redis",
+    "timestamp": "2026-09-01T06:14:42.604373+00:00",
+    "parameters": {
+      "backlog_size": 1000
+    },
+    "before_state": {
+      "target": "shadow-redis",
+      "fault": "rabbitmq_backlog",
+      "message_count": 1000,
+      "exit_code": 127
+    },
+    "active": true
+  },
+  {
+    "incident_id": "case_06_component_divergence",
+    "fault_type": "apply_queue_pressure",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T06:14:44.881320+00:00",
+    "parameters": {
+      "backlog_size": 1000
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "rabbitmq_backlog",
+      "message_count": 1000,
+      "exit_code": 127
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_12_redis_memory_eviction",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T10:27:52.780461+00:00",
+    "parameters": {
+      "resource_type": "memory_limit",
+      "limit_mb": 64
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "memory_limit",
+      "limit_mb": 64
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_12_redis_memory_eviction",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:00:55.548119+00:00",
+    "parameters": {
+      "resource_type": "memory_limit",
+      "limit_mb": 64
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "memory_limit",
+      "limit_mb": 64
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_12_redis_memory_eviction",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:40:34.793341+00:00",
+    "parameters": {
+      "resource_type": "memory_limit",
+      "limit_mb": 64
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "memory_limit",
+      "limit_mb": 64
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_01_semantic_consensus",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:41:42.712143+00:00",
+    "parameters": {
+      "resource_type": "memory_limit",
+      "limit_mb": 64
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "memory_limit",
+      "limit_mb": 64
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_02_safety_veto",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:42:26.507803+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_03_guided_pivot",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:43:11.386493+00:00",
+    "parameters": {
+      "resource_type": "postgres_connections",
+      "connection_count": 100
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "exhaust_postgres_connections",
+      "requested": 100,
+      "opened_held": 100
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_04_selective_resample",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:44:33.962250+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_07_evidence_gap",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:46:45.701505+00:00",
+    "parameters": {
+      "resource_type": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_08_schema_violation",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:48:04.934918+00:00",
+    "parameters": {
+      "resource_type": "postgres_connections",
+      "connection_count": 100
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "exhaust_postgres_connections",
+      "requested": 100,
+      "opened_held": 100
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_11_pg_connection_exhaustion",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:50:14.564707+00:00",
+    "parameters": {
+      "resource_type": "postgres_connections",
+      "connection_count": 100
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "exhaust_postgres_connections",
+      "requested": 100,
+      "opened_held": 100
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_12_redis_memory_eviction",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:50:58.933961+00:00",
+    "parameters": {
+      "resource_type": "memory_limit",
+      "limit_mb": 64
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "memory_limit",
+      "limit_mb": 64
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_13_dns_resolution_failure",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:51:45.041952+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_14_disk_pressure_wal",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:52:32.290778+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_15_cpu_throttling",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:53:18.996658+00:00",
+    "parameters": {
+      "resource_type": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_17_tls_cert_expiry",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:54:49.939366+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_18_kernel_panic",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:55:43.320110+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_19_bpf_filter_drop",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:56:30.356828+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_20_grpc_stream_deadlock",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:57:13.339754+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_21_ingress_rate_limit",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:58:00.321058+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_22_storage_corruption_nuclear",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T15:58:45.396184+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_01_semantic_consensus",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T16:26:25.819781+00:00",
+    "parameters": {
+      "resource_type": "memory_limit",
+      "limit_mb": 64
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "memory_limit",
+      "limit_mb": 64
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_02_safety_veto",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T16:26:29.722081+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_03_guided_pivot",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T16:26:34.023211+00:00",
+    "parameters": {
+      "resource_type": "postgres_connections",
+      "connection_count": 100
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "exhaust_postgres_connections",
+      "requested": 100,
+      "opened_held": 100
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_04_selective_resample",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T16:26:40.998997+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_05_mttr_decay",
+    "fault_type": "apply_latency",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T16:26:44.035426+00:00",
+    "parameters": {
+      "delay_ms": 500
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "network_latency",
+      "latency_ms": 500,
+      "exit_code": 127,
+      "output": "OCI runtime exec failed: exec failed: unable to start container process: exec: \"tc\": executable file not found in $PATH\r\n"
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_07_evidence_gap",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T16:26:49.533916+00:00",
+    "parameters": {
+      "resource_type": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "cpu_throttle",
+      "quota_percent": 20
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_08_schema_violation",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T16:26:50.859272+00:00",
+    "parameters": {
+      "resource_type": "postgres_connections",
+      "connection_count": 100
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "exhaust_postgres_connections",
+      "requested": 100,
+      "opened_held": 100
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_11_pg_connection_exhaustion",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T16:26:58.673787+00:00",
+    "parameters": {
+      "resource_type": "postgres_connections",
+      "connection_count": 100
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "exhaust_postgres_connections",
+      "requested": 100,
+      "opened_held": 100
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_12_redis_memory_eviction",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T16:27:00.540927+00:00",
+    "parameters": {
+      "resource_type": "memory_limit",
+      "limit_mb": 64
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "memory_limit",
+      "limit_mb": 64
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_12_redis_memory_eviction",
+    "fault_type": "apply_resource_exhaustion",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T16:27:04.750694+00:00",
+    "parameters": {
+      "resource_type": "memory_limit",
+      "limit_mb": 64
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "memory_limit",
+      "limit_mb": 64
+    },
+    "active": false
+  },
+  {
+    "incident_id": "case_13_dns_resolution_failure",
+    "fault_type": "apply_process_disruption",
+    "target": "shadow-api-gateway",
+    "timestamp": "2026-09-01T16:27:09.210986+00:00",
+    "parameters": {
+      "mode": "restart"
+    },
+    "before_state": {
+      "target": "shadow-api-gateway",
+      "fault": "restart_container",
+      "status": "restarted"
+    },
+    "active": true
+  }
+]

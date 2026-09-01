@@ -1,0 +1,48 @@
+{
+  "incident_id": "case_10_deep_failure",
+  "run_timestamp": "2026-09-01T15:49:32.986950+00:00",
+  "gate_decision": "EXECUTED",
+  "confidence_score": 0.85,
+  "human_intervention_required": false,
+  "message": null,
+  "before_state": {
+    "target": "shadow-api-gateway",
+    "status": "exited",
+    "running": false,
+    "paused": false,
+    "memory_limit_bytes": 67108864,
+    "nano_cpus": 0,
+    "cpu_quota": 20000,
+    "captured_at": "2026-09-01T15:49:31.649095+00:00"
+  },
+  "agent_proposal": {
+    "tool": "restart_service",
+    "target": "shadow-api-gateway",
+    "parameters": {},
+    "reasoning": "Fix instructs restarting service shadow-api-gateway to clear transient state error."
+  },
+  "guardrail_result": {
+    "passed": true,
+    "reason": null
+  },
+  "execution_result": {
+    "target": "shadow-api-gateway",
+    "tool": "restart_service",
+    "status": "restarted"
+  },
+  "after_state": {
+    "target": "shadow-api-gateway",
+    "status": "running",
+    "health": "starting"
+  },
+  "fault_cleared": true,
+  "performance": {
+    "safety_check_time_s": 0.0,
+    "agent_proposal_time_s": 0.0,
+    "guardrail_check_time_s": 0.0,
+    "execution_time_s": 0.3135,
+    "settle_wait_time_s": 1.0004,
+    "state_recheck_time_s": 0.0227,
+    "total_pipeline_time_s": 1.3612
+  }
+}

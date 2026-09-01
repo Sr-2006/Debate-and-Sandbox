@@ -1,0 +1,48 @@
+{
+  "system_context": {
+    "objective": "Perform automated Multi-Agent Root Cause Analysis (RCA) and recommend corrective actions.",
+    "environment": "Kubernetes (EKS), gRPC Go Service, HTTP/2",
+    "current_health_score": 55,
+    "active_warnings": 7
+  },
+  "incident_event": {
+    "incident_id": "case_20_grpc_stream_deadlock",
+    "target_service": "stream-gateway",
+    "priority_score": 80.0,
+    "severity": "HIGH",
+    "occurrence_count": 450
+  },
+  "infrastructure_topology": {
+    "role": "bidi-streaming-grpc",
+    "downstream_dependencies": [],
+    "exposed_ports": ["50051:50051"]
+  },
+  "service_health_status": {
+    "docker_status": "running",
+    "health_check": "degraded",
+    "dependency_states": {}
+  },
+  "telemetry_evidence": {
+    "log_cluster_template": "ERROR [stream-gateway] rpc error: code = ResourceExhausted desc = gRPC HTTP/2 stream flow control window blocked.",
+    "log_samples": [
+      {
+        "timestamp": "2026-08-10T18:45:00.000Z",
+        "level": "ERROR",
+        "content": "[stream-gateway] gRPC stream deadlock: HTTP/2 flow control window 0 bytes available on stream 103.",
+        "trace_id": "trace-grpc-20",
+        "span_id": "span-flow-control"
+      }
+    ],
+    "metrics_snapshot": [
+      {
+        "timestamp": "2026-08-10T18:45:00.000Z",
+        "grpc_active_streams": 1000,
+        "http2_flow_control_window_bytes": 0
+      }
+    ]
+  },
+  "injected_chaos_context": {
+    "active_infrastructure_mutations": "HTTP/2 stream flow control window exhaustion in gRPC bidirectional stream."
+  },
+  "agent_instruction": "Analyze gRPC HTTP/2 stream flow control deadlock and output safe stream reset steps."
+}

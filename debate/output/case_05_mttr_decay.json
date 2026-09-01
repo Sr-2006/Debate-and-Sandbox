@@ -1,0 +1,99 @@
+{
+    "incident_id": "case_05_mttr_decay",
+    "timestamp": "2026-09-01T21:14:38.484364",
+    "problem": "### INCIDENT CONTEXT [case_05_mttr_decay]\n- **Target Service**: `report-service` | **Severity**: `MEDIUM`\n- **Role**: analytics-reporter\n- **Target Status**: `running` (healthy)\n- **Dependencies**:\n  - `redis-cache`: running (healthy)\n- \u26a0\ufe0f **Active Mutation**: Heavy report generation queue causing systemic latency exceeding 20 seconds threshold.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `WARN [report-service] Report generation queue latency high (25000ms).`\n- **Top Log Samples**:\n  - [2026-08-10T17:20:00.000Z] WARN: [report-service] Batch process took 25 seconds to process 10,000 PDF requests.\n- **Metrics**: queue_delay_seconds=25.0\n\n### TASK INSTRUCTION\nAnalyze report generation delay and output remediation steps.",
+    "round_1": {
+        "optimist": {
+            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Recovery Engineer focused on rapid service restoration.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot max 15 words>\", \"primary_component\": \"<one of: Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"evidence\": \"<exact log line or metric you relied on>\", \"triage\": \"<0-5 min actions>\", \"stab\": \"<5-60 min actions>\", \"rca\": \"<root cause grounded in the evidence>\", \"conf\": 0.95}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be one of the listed values.\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Focus on fastest safe recovery. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_05_mttr_decay]\n- **Target Service**: `report-service` | **Severity**: `MEDIUM`\n- **Role**: analytics-reporter\n- **Target Status**: `running` (healthy)\n- **Dependencies**:\n  - `redis-cache`: running (healthy)\n- \u26a0\ufe0f **Active Mutation**: Heavy report generation queue causing systemic latency exceeding 20 seconds threshold.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `WARN [report-service] Report generation queue latency high (25000ms).`\n- **Top Log Samples**:\n  - [2026-08-10T17:20:00.000Z] WARN: [report-service] Batch process took 25 seconds to process 10,000 PDF requests.\n- **Metrics**: queue_delay_seconds=25.0\n\n### TASK INSTRUCTION\nAnalyze report generation delay and output remediation steps.",
+            "response": {
+                "logic": "Identify and optimize report processing to reduce latency.",
+                "primary_component": "Network",
+                "evidence": "WARN [report-service] Report generation queue latency high (25000ms).",
+                "triage": "Check network latency and optimize Redis cache access.",
+                "stab": "Optimize report processing pipeline, consider parallel processing.",
+                "rca": "High latency due to network delays and Redis cache access inefficiencies.",
+                "conf": 0.95
+            },
+            "latency": 11.78
+        },
+        "critic": {
+            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Reliability Engineer focused on operational risk, safety, and preventing secondary outages.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot safety check max 15 words>\", \"primary_component\": \"<one of: Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"evidence\": \"<exact log line or metric you relied on>\", \"triage\": \"<0-5 min risk-mitigated actions>\", \"stab\": \"<5-60 min stabilization steps>\", \"rca\": \"<root cause grounded in the evidence>\", \"conf\": 0.90}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be one of the listed values.\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Focus on zero data loss and safe rollbacks. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_05_mttr_decay]\n- **Target Service**: `report-service` | **Severity**: `MEDIUM`\n- **Role**: analytics-reporter\n- **Target Status**: `running` (healthy)\n- **Dependencies**:\n  - `redis-cache`: running (healthy)\n- \u26a0\ufe0f **Active Mutation**: Heavy report generation queue causing systemic latency exceeding 20 seconds threshold.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `WARN [report-service] Report generation queue latency high (25000ms).`\n- **Top Log Samples**:\n  - [2026-08-10T17:20:00.000Z] WARN: [report-service] Batch process took 25 seconds to process 10,000 PDF requests.\n- **Metrics**: queue_delay_seconds=25.0\n\n### TASK INSTRUCTION\nAnalyze report generation delay and output remediation steps.",
+            "response": {
+                "logic": "Check report generation queue and adjust batch size or optimize processing.",
+                "primary_component": "Code",
+                "evidence": "WARN [report-service] Report generation queue latency high (25000ms).",
+                "triage": "Review and optimize report generation code for batch processing.",
+                "stab": "Optimize database queries and reduce latency in report generation.",
+                "rca": "High latency due to inefficient batch processing in report generation code.",
+                "conf": 0.9
+            },
+            "latency": 14.49
+        },
+        "fact_checker": {
+            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Verification Engineer focused on log and telemetry evidence validation.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot evidence verification max 15 words>\", \"primary_component\": \"<one of: Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"evidence\": \"<exact log line or metric you relied on>\", \"triage\": \"<0-5 min evidence checks>\", \"stab\": \"<5-60 min metric validations>\", \"rca\": \"<grounded root cause analysis>\", \"conf\": 0.95}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be one of the listed values.\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Base analysis strictly on provided logs and metrics. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_05_mttr_decay]\n- **Target Service**: `report-service` | **Severity**: `MEDIUM`\n- **Role**: analytics-reporter\n- **Target Status**: `running` (healthy)\n- **Dependencies**:\n  - `redis-cache`: running (healthy)\n- \u26a0\ufe0f **Active Mutation**: Heavy report generation queue causing systemic latency exceeding 20 seconds threshold.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `WARN [report-service] Report generation queue latency high (25000ms).`\n- **Top Log Samples**:\n  - [2026-08-10T17:20:00.000Z] WARN: [report-service] Batch process took 25 seconds to process 10,000 PDF requests.\n- **Metrics**: queue_delay_seconds=25.0\n\n### TASK INSTRUCTION\nAnalyze report generation delay and output remediation steps.",
+            "response": {
+                "logic": "Analyze report generation delay via queue_metrics.",
+                "primary_component": "Network",
+                "evidence": "queue_delay_seconds=25.0",
+                "triage": "Check Redis cache latency.",
+                "stab": "Verify Redis cache performance and report-service queue processing.",
+                "rca": "Redis cache may be a bottleneck causing high latency.",
+                "conf": 0.95
+            },
+            "latency": 11.95
+        }
+    },
+    "consensus": {
+        "score": 0.7,
+        "threshold": 0.85,
+        "debate_required": false
+    },
+    "round_2": null,
+    "orchestrator": {
+        "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are the Lead Incident Commander. Synthesize agent perspectives into ONE definitive JSON decision.\nOutput ONLY valid JSON matching this exact schema:\n{\"consensus_rc\": \"<Root Cause>\", \"primary_component\": \"<Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"consensus_quality\": \"<HIGH|MEDIUM|LOW>\", \"final_triage\": \"<Immediate Fix>\", \"final_stab\": \"<Stabilization Plan>\", \"final_rca\": \"<Long-Term Prevention>\", \"action_commands\": [\"<exact_remediation_command_1>\"], \"confidence\": <0-100 integer>, \"reasoning\": \"<1-sentence justification citing evidence>\"}\n\nRules:\n- Keep total output under 120 words.\n- primary_component MUST be one of the listed values and MUST match the component the majority of agents identified.\n- action_commands MUST be safe, executable, and reference the implicated service/component from the telemetry. NEVER output destructive commands (no delete/drop/flushall/rm -rf/scale to 0).\n- Calculate confidence from EVIDENCE AGREEMENT: if agents converge on the same grounded component, confidence >= 90; if they diverge, confidence <= 60.\n- Pick the technically strongest, safest path. Output strictly valid JSON.\n\n[USER PROMPT]:\nIncident Summary:\n### INCIDENT CONTEXT [case_05_mttr_decay]\n- **Target Service**: `report-service` | **Severity**: `MEDIUM`\n\nCompressed Agent State:\n{\"workers\": {\"optimist\": {\"component\": \"Network\", \"root_cause\": \"High latency due to network delays and Redis cache access inefficiencies.\", \"confidence\": 0.95, \"evidence\": \"WARN [report-service] Report generation queue latency high (25000ms).\", \"triage\": \"Check network latency and optimize Redis cache access.\", \"safety_flag\": false}, \"critic\": {\"component\": \"Code\", \"root_cause\": \"High latency due to inefficient batch processing in report generation code.\", \"confidence\": 0.9, \"evidence\": \"WARN [report-service] Report generation queue latency high (25000ms).\", \"triage\": \"Review and optimize report generation code for batch processing.\", \"safety_flag\": false}, \"fact_checker\": {\"component\": \"Network\", \"root_cause\": \"Redis cache may be a bottleneck causing high latency.\", \"confidence\": 0.95, \"evidence\": \"queue_delay_seconds=25.0\", \"triage\": \"Check Redis cache latency.\", \"safety_flag\": false}}}\n",
+        "technical_solution": {
+            "consensus_rc": "High latency due to network delays and Redis cache access inefficiencies.",
+            "primary_component": "Network",
+            "consensus_quality": "HIGH",
+            "final_triage": "Check network latency and optimize Redis cache access.",
+            "final_stab": "Implement network optimization and Redis cache tuning.",
+            "final_rca": "Review and optimize report generation code for batch processing and network configuration.",
+            "action_commands": [
+                "CHECK NETWORK LATENCY",
+                "OPTIMIZE REDIS CACHE ACCESS"
+            ],
+            "confidence": 95,
+            "reasoning": "Majority consensus on network and Redis cache issues, with high confidence evidence.",
+            "calculated_confidence": 70,
+            "safety_violation": false,
+            "scoring_metadata": {
+                "safety_violation": false,
+                "blocked_command": null,
+                "veto_reason": null,
+                "semantic_similarity": 0.547,
+                "outlier_agent": "critic",
+                "component_agreement": 0.667,
+                "evidence_grounding": 0.458,
+                "divergence_penalty": 0,
+                "evidence_mapping_penalty": 0,
+                "schema_bonus": 10,
+                "evidence_gate": false,
+                "action_risk": "low",
+                "execution_mode": "autonomous",
+                "parse_failures": 0,
+                "non_executable_commands": true,
+                "telemetry_hazard_detected": false,
+                "non_executable_deduction": 5,
+                "difficulty_prior": 1.0
+            }
+        },
+        "confidence": "70%",
+        "latency": 21.64
+    },
+    "performance": {
+        "round1_time": 15.26,
+        "round2_time": 0.0,
+        "orchestrator_time": 21.64,
+        "total_pipeline_time": 37.06
+    }
+}

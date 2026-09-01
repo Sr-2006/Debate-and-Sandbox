@@ -1,0 +1,23 @@
+{
+  "incident_id": "case_10_deep_failure",
+  "run_timestamp": "2026-09-01T05:47:30.695744+00:00",
+  "gate_decision": "BLOCKED_UNMAPPED",
+  "confidence_score": null,
+  "human_intervention_required": true,
+  "message": "Fix action commands could not be mapped: ['Run network diagnostics to identify any anomalies']",
+  "before_state": null,
+  "agent_proposal": null,
+  "guardrail_result": null,
+  "execution_result": null,
+  "after_state": null,
+  "fault_cleared": null,
+  "performance": {
+    "safety_check_time_s": 0.0,
+    "agent_proposal_time_s": 0.0002,
+    "guardrail_check_time_s": null,
+    "execution_time_s": null,
+    "settle_wait_time_s": null,
+    "state_recheck_time_s": null,
+    "total_pipeline_time_s": 0.0011
+  }
+}

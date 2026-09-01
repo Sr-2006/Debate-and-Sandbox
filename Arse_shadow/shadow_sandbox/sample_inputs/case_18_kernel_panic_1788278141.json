@@ -1,0 +1,18 @@
+{
+    "incident_id": "case_18_kernel_panic",
+    "problem": "",
+    "orchestrator": {
+        "technical_solution": {
+            "action_commands": [
+                "kubectl drain k8s-node-worker-04 --ignore-daemonsets --grace-period=30s --force",
+                "kubectl cordon k8s-node-worker-04"
+            ],
+            "confidence": 85,
+            "calculated_confidence": 85,
+            "safety_violation": false
+        }
+    },
+    "root_cause_analysis": {
+        "summary": "Node is unresponsive due to kernel panic caused by out of memory conditions."
+    }
+}

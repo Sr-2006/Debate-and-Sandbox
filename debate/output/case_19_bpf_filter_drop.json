@@ -1,0 +1,98 @@
+{
+    "incident_id": "case_19_bpf_filter_drop",
+    "timestamp": "2026-09-01T21:25:47.111036",
+    "problem": "### INCIDENT CONTEXT [case_19_bpf_filter_drop]\n- **Target Service**: `mesh-proxy` | **Severity**: `HIGH`\n- **Role**: ebpf-dataplane-filter\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: Cilium eBPF network policy map entry drop causing inter-pod packet rejection.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `ERROR [mesh-proxy] bpf_map_lookup_elem failed; Cilium eBPF packet drop policy active.`\n- **Top Log Samples**:\n  - [2026-08-10T18:40:00.000Z] ERROR: [mesh-proxy] Cilium BPF datapath: Policy drop (Identity 104 -> Identity 502) packet dropped by eBPF map filter.\n- **Metrics**: cilium_drop_count_total=3400\n\n### TASK INSTRUCTION\nAnalyze eBPF network policy packet drops and output Cilium policy reload commands.",
+    "round_1": {
+        "optimist": {
+            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Recovery Engineer focused on rapid service restoration.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot max 15 words>\", \"primary_component\": \"<one of: Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"evidence\": \"<exact log line or metric you relied on>\", \"triage\": \"<0-5 min actions>\", \"stab\": \"<5-60 min actions>\", \"rca\": \"<root cause grounded in the evidence>\", \"conf\": 0.95}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be one of the listed values.\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Focus on fastest safe recovery. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_19_bpf_filter_drop]\n- **Target Service**: `mesh-proxy` | **Severity**: `HIGH`\n- **Role**: ebpf-dataplane-filter\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: Cilium eBPF network policy map entry drop causing inter-pod packet rejection.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `ERROR [mesh-proxy] bpf_map_lookup_elem failed; Cilium eBPF packet drop policy active.`\n- **Top Log Samples**:\n  - [2026-08-10T18:40:00.000Z] ERROR: [mesh-proxy] Cilium BPF datapath: Policy drop (Identity 104 -> Identity 502) packet dropped by eBPF map filter.\n- **Metrics**: cilium_drop_count_total=3400\n\n### TASK INSTRUCTION\nAnalyze eBPF network policy packet drops and output Cilium policy reload commands.",
+            "response": {
+                "logic": "Reload Cilium eBPF policy to restore mesh-proxy service.",
+                "primary_component": "Policy",
+                "evidence": "ERROR [mesh-proxy] Cilium BPF datapath: Policy drop (Identity 104 -> Identity 502) packet dropped by eBPF map filter.",
+                "triage": "Reload Cilium eBPF policy using command `cilium policy reload`.",
+                "stab": "Monitor cilium_drop_count_total to ensure it returns to normal.",
+                "rca": "Cilium eBPF policy is active, causing packet drops.",
+                "conf": 0.95
+            },
+            "latency": 19.98
+        },
+        "critic": {
+            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Reliability Engineer focused on operational risk, safety, and preventing secondary outages.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot safety check max 15 words>\", \"primary_component\": \"<one of: Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"evidence\": \"<exact log line or metric you relied on>\", \"triage\": \"<0-5 min risk-mitigated actions>\", \"stab\": \"<5-60 min stabilization steps>\", \"rca\": \"<root cause grounded in the evidence>\", \"conf\": 0.90}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be one of the listed values.\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Focus on zero data loss and safe rollbacks. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_19_bpf_filter_drop]\n- **Target Service**: `mesh-proxy` | **Severity**: `HIGH`\n- **Role**: ebpf-dataplane-filter\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: Cilium eBPF network policy map entry drop causing inter-pod packet rejection.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `ERROR [mesh-proxy] bpf_map_lookup_elem failed; Cilium eBPF packet drop policy active.`\n- **Top Log Samples**:\n  - [2026-08-10T18:40:00.000Z] ERROR: [mesh-proxy] Cilium BPF datapath: Policy drop (Identity 104 -> Identity 502) packet dropped by eBPF map filter.\n- **Metrics**: cilium_drop_count_total=3400\n\n### TASK INSTRUCTION\nAnalyze eBPF network policy packet drops and output Cilium policy reload commands.",
+            "response": {
+                "logic": "Reload Cilium eBPF policy to restore packet forwarding.",
+                "primary_component": "Cilium",
+                "evidence": "ERROR [mesh-proxy] Cilium BPF datapath: Policy drop (Identity 104 -> Identity 502) packet dropped by eBPF map filter.",
+                "triage": "Execute Cilium eBPF policy reload command to restore packet forwarding.",
+                "stab": "Rollback to previous Cilium eBPF policy configuration if packet drops persist.",
+                "rca": "Cilium eBPF policy is active, causing packet drops due to eBPF map entry drop.",
+                "conf": 0.9
+            },
+            "latency": 16.92
+        },
+        "fact_checker": {
+            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Verification Engineer focused on log and telemetry evidence validation.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot evidence verification max 15 words>\", \"primary_component\": \"<one of: Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"evidence\": \"<exact log line or metric you relied on>\", \"triage\": \"<0-5 min evidence checks>\", \"stab\": \"<5-60 min metric validations>\", \"rca\": \"<grounded root cause analysis>\", \"conf\": 0.95}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be one of the listed values.\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Base analysis strictly on provided logs and metrics. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_19_bpf_filter_drop]\n- **Target Service**: `mesh-proxy` | **Severity**: `HIGH`\n- **Role**: ebpf-dataplane-filter\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: Cilium eBPF network policy map entry drop causing inter-pod packet rejection.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `ERROR [mesh-proxy] bpf_map_lookup_elem failed; Cilium eBPF packet drop policy active.`\n- **Top Log Samples**:\n  - [2026-08-10T18:40:00.000Z] ERROR: [mesh-proxy] Cilium BPF datapath: Policy drop (Identity 104 -> Identity 502) packet dropped by eBPF map filter.\n- **Metrics**: cilium_drop_count_total=3400\n\n### TASK INSTRUCTION\nAnalyze eBPF network policy packet drops and output Cilium policy reload commands.",
+            "response": {
+                "logic": "Cilium eBPF policy causing packet drops, check for policy reload commands.",
+                "primary_component": "Policy",
+                "evidence": "ERROR [mesh-proxy] Cilium BPF datapath: Policy drop (Identity 104 -> Identity 502) packet dropped by eBPF map filter.",
+                "triage": "Verify eBPF map entries, check cilium_drop_count_total metric.",
+                "stab": "Reload Cilium eBPF policy, validate packet drops.",
+                "rca": "Cilium eBPF policy is active, causing packet drops.",
+                "conf": 0.95
+            },
+            "latency": 13.78
+        }
+    },
+    "consensus": {
+        "score": 0.65,
+        "threshold": 0.85,
+        "debate_required": false
+    },
+    "round_2": null,
+    "orchestrator": {
+        "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are the Lead Incident Commander. Synthesize agent perspectives into ONE definitive JSON decision.\nOutput ONLY valid JSON matching this exact schema:\n{\"consensus_rc\": \"<Root Cause>\", \"primary_component\": \"<Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"consensus_quality\": \"<HIGH|MEDIUM|LOW>\", \"final_triage\": \"<Immediate Fix>\", \"final_stab\": \"<Stabilization Plan>\", \"final_rca\": \"<Long-Term Prevention>\", \"action_commands\": [\"<exact_remediation_command_1>\"], \"confidence\": <0-100 integer>, \"reasoning\": \"<1-sentence justification citing evidence>\"}\n\nRules:\n- Keep total output under 120 words.\n- primary_component MUST be one of the listed values and MUST match the component the majority of agents identified.\n- action_commands MUST be safe, executable, and reference the implicated service/component from the telemetry. NEVER output destructive commands (no delete/drop/flushall/rm -rf/scale to 0).\n- Calculate confidence from EVIDENCE AGREEMENT: if agents converge on the same grounded component, confidence >= 90; if they diverge, confidence <= 60.\n- Pick the technically strongest, safest path. Output strictly valid JSON.\n\n[USER PROMPT]:\nIncident Summary:\n### INCIDENT CONTEXT [case_19_bpf_filter_drop]\n- **Target Service**: `mesh-proxy` | **Severity**: `HIGH`\n\nCompressed Agent State:\n{\"workers\": {\"optimist\": {\"component\": \"Policy\", \"root_cause\": \"Cilium eBPF policy is active, causing packet drops.\", \"confidence\": 0.95, \"evidence\": \"ERROR [mesh-proxy] Cilium BPF datapath: Policy drop (Identity 104 -> Identity 502) packet dropped by eBPF map filter.\", \"triage\": \"Reload Cilium eBPF policy using command `cilium policy reload`.\", \"safety_flag\": false}, \"critic\": {\"component\": \"Cilium\", \"root_cause\": \"Cilium eBPF policy is active, causing packet drops due to eBPF map entry drop.\", \"confidence\": 0.9, \"evidence\": \"ERROR [mesh-proxy] Cilium BPF datapath: Policy drop (Identity 104 -> Identity 502) packet dropped by eBPF map filter.\", \"triage\": \"Execute Cilium eBPF policy reload command to restore packet forwarding.\", \"safety_flag\": false}, \"fact_checker\": {\"component\": \"Policy\", \"root_cause\": \"Cilium eBPF policy is active, causing packet drops.\", \"confidence\": 0.95, \"evidence\": \"ERROR [mesh-proxy] Cilium BPF datapath: Policy drop (Identity 104 -> Identity 502) packet dropped by eBPF map filter.\", \"triage\": \"Verify eBPF map entries, check cilium_drop_count_total metric.\", \"safety_flag\": false}}}\n",
+        "technical_solution": {
+            "consensus_rc": "Cilium eBPF policy is active, causing packet drops.",
+            "primary_component": "Policy",
+            "consensus_quality": "HIGH",
+            "final_triage": "Reload Cilium eBPF policy using command `cilium policy reload`.",
+            "final_stab": "Monitor `cilium_drop_count_total` metric and ensure no further packet drops occur.",
+            "final_rca": "Review and validate Cilium eBPF policy rules to prevent future packet drops.",
+            "action_commands": [
+                "cilium policy reload"
+            ],
+            "confidence": 95,
+            "reasoning": "Agents converge on the same root cause and component, indicating high confidence.",
+            "calculated_confidence": 65,
+            "safety_violation": false,
+            "scoring_metadata": {
+                "safety_violation": false,
+                "blocked_command": null,
+                "veto_reason": null,
+                "semantic_similarity": 0.944,
+                "outlier_agent": "critic",
+                "component_agreement": 1.0,
+                "evidence_grounding": 0.97,
+                "divergence_penalty": 0,
+                "evidence_mapping_penalty": 0,
+                "schema_bonus": 10,
+                "evidence_gate": false,
+                "action_risk": "high",
+                "execution_mode": "sandbox",
+                "parse_failures": 0,
+                "non_executable_commands": true,
+                "telemetry_hazard_detected": false,
+                "non_executable_deduction": 5,
+                "difficulty_prior": 1.0
+            }
+        },
+        "confidence": "65%",
+        "latency": 21.03
+    },
+    "performance": {
+        "round1_time": 19.98,
+        "round2_time": 0.0,
+        "orchestrator_time": 21.03,
+        "total_pipeline_time": 41.09
+    }
+}

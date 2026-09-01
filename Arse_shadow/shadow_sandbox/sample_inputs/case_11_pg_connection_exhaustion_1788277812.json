@@ -1,0 +1,17 @@
+{
+    "incident_id": "case_11_pg_connection_exhaustion",
+    "problem": "",
+    "orchestrator": {
+        "technical_solution": {
+            "action_commands": [
+                "sudo systemctl restart postgresql"
+            ],
+            "confidence": 68,
+            "calculated_confidence": 68,
+            "safety_violation": false
+        }
+    },
+    "root_cause_analysis": {
+        "summary": "Connection pool limit reached due to high load and recent increase in client connections"
+    }
+}

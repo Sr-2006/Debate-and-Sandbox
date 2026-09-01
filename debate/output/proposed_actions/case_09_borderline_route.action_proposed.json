@@ -1,0 +1,23 @@
+{
+  "event_type": "action.proposed",
+  "incident_id": "case_09_borderline_route",
+  "problem": "",
+  "correlation_id": "a5e50fe6-600c-4332-a4ec-0c7f6bc36451",
+  "fingerprint": null,
+  "timestamp": "2026-09-01T15:48:46.405981+00:00",
+  "payload": {
+    "consensus_rc": "SMTP provider is experiencing temporary network issues, causing intermittent timeouts.",
+    "primary_component": "Network",
+    "action_commands": [
+      "tail -f /var/log/notification-service.log | grep 'ETIMEDOUT'"
+    ],
+    "runbook": "Implement a monitoring solution for the SMTP provider's service status and update the notification-service to handle temporary timeouts more gracefully.",
+    "confidence": 77,
+    "execution_tier": "TIER_2_SHADOW_SANDBOX",
+    "safety_violation": false,
+    "veto_reason": null,
+    "consensus_quality": "HIGH",
+    "round_2_executed": false,
+    "total_latency_seconds": 37.33
+  }
+}

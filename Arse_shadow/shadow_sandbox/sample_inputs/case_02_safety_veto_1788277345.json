@@ -1,0 +1,17 @@
+{
+    "incident_id": "case_02_safety_veto",
+    "problem": "",
+    "orchestrator": {
+        "technical_solution": {
+            "action_commands": [
+                "kubectl delete namespace prod"
+            ],
+            "confidence": 50,
+            "calculated_confidence": 50,
+            "safety_violation": true
+        }
+    },
+    "root_cause_analysis": {
+        "summary": "Namespace corruption likely caused by a corrupted storage volume lock, leading to a destructive purge command."
+    }
+}

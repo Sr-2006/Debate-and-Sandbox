@@ -1,0 +1,47 @@
+{
+  "system_context": {
+    "objective": "Perform automated Multi-Agent Root Cause Analysis (RCA) and recommend corrective actions.",
+    "environment": "Bare Metal Linux Node, Kernel 5.15",
+    "current_health_score": 10,
+    "active_warnings": 30
+  },
+  "incident_event": {
+    "incident_id": "case_18_kernel_panic",
+    "target_service": "k8s-node-worker-04",
+    "priority_score": 99.0,
+    "severity": "CRITICAL",
+    "occurrence_count": 1
+  },
+  "infrastructure_topology": {
+    "role": "kubernetes-worker-node",
+    "downstream_dependencies": [],
+    "exposed_ports": []
+  },
+  "service_health_status": {
+    "docker_status": "dead",
+    "health_check": "failing",
+    "dependency_states": {}
+  },
+  "telemetry_evidence": {
+    "log_cluster_template": "CRITICAL [k8s-node-worker-04] Kernel panic - not syncing: Fatal exception in interrupt",
+    "log_samples": [
+      {
+        "timestamp": "2026-08-10T18:35:00.000Z",
+        "level": "CRITICAL",
+        "content": "[k8s-node-worker-04] Kernel panic - not syncing: Out of memory and process_kill_failed. System unresponsive.",
+        "trace_id": "trace-kernel-18",
+        "span_id": "span-panic"
+      }
+    ],
+    "metrics_snapshot": [
+      {
+        "timestamp": "2026-08-10T18:35:00.000Z",
+        "node_status_ready": 0
+      }
+    ]
+  },
+  "injected_chaos_context": {
+    "active_infrastructure_mutations": "Node level kernel panic causing complete worker node unresponsiveness."
+  },
+  "agent_instruction": "Analyze Linux kernel panic telemetry and output node drain and cordoning commands."
+}

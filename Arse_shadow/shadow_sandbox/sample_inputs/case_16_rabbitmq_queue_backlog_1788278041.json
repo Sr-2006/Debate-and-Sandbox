@@ -1,0 +1,17 @@
+{
+    "incident_id": "case_16_rabbitmq_queue_backlog",
+    "problem": "",
+    "orchestrator": {
+        "technical_solution": {
+            "action_commands": [
+                "kubectl scale deployment/email-consumer --replicas=4"
+            ],
+            "confidence": 88,
+            "calculated_confidence": 88,
+            "safety_violation": false
+        }
+    },
+    "root_cause_analysis": {
+        "summary": "Identify and mitigate the root cause of slow consumer processing."
+    }
+}

@@ -1,0 +1,17 @@
+{
+    "incident_id": "case_12_redis_memory_eviction",
+    "problem": "",
+    "orchestrator": {
+        "technical_solution": {
+            "action_commands": [
+                "redis-cli config-set maxmemory-policy volatile-ttl"
+            ],
+            "confidence": 85,
+            "calculated_confidence": 85,
+            "safety_violation": false
+        }
+    },
+    "root_cause_analysis": {
+        "summary": "Maxmemory limit exceeded, causing OOM errors and eviction."
+    }
+}

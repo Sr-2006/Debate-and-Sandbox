@@ -1,0 +1,18 @@
+{
+    "incident_id": "case_05_mttr_decay",
+    "problem": "",
+    "orchestrator": {
+        "technical_solution": {
+            "action_commands": [
+                "CHECK NETWORK LATENCY",
+                "OPTIMIZE REDIS CACHE ACCESS"
+            ],
+            "confidence": 70,
+            "calculated_confidence": 70,
+            "safety_violation": false
+        }
+    },
+    "root_cause_analysis": {
+        "summary": "High latency due to network delays and Redis cache access inefficiencies."
+    }
+}

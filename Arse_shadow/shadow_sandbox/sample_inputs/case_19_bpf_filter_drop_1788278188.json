@@ -1,0 +1,17 @@
+{
+    "incident_id": "case_19_bpf_filter_drop",
+    "problem": "",
+    "orchestrator": {
+        "technical_solution": {
+            "action_commands": [
+                "cilium policy reload"
+            ],
+            "confidence": 65,
+            "calculated_confidence": 65,
+            "safety_violation": false
+        }
+    },
+    "root_cause_analysis": {
+        "summary": "Cilium eBPF policy is active, causing packet drops."
+    }
+}

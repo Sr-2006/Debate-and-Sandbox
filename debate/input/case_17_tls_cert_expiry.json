@@ -1,0 +1,47 @@
+{
+  "system_context": {
+    "objective": "Perform automated Multi-Agent Root Cause Analysis (RCA) and recommend corrective actions.",
+    "environment": "Kubernetes (EKS), Nginx Ingress Controller, cert-manager",
+    "current_health_score": 20,
+    "active_warnings": 25
+  },
+  "incident_event": {
+    "incident_id": "case_17_tls_cert_expiry",
+    "target_service": "ingress-gateway",
+    "priority_score": 95.0,
+    "severity": "CRITICAL",
+    "occurrence_count": 89000
+  },
+  "infrastructure_topology": {
+    "role": "tls-termination-proxy",
+    "downstream_dependencies": [],
+    "exposed_ports": ["443:443"]
+  },
+  "service_health_status": {
+    "docker_status": "running",
+    "health_check": "failing",
+    "dependency_states": {}
+  },
+  "telemetry_evidence": {
+    "log_cluster_template": "FATAL [ingress-gateway] SSL_ERROR_SSL: certificate has expired (x509: certificate signed by unknown authority or expired)",
+    "log_samples": [
+      {
+        "timestamp": "2026-08-10T18:30:00.000Z",
+        "level": "FATAL",
+        "content": "[ingress-gateway] TLS handshake failed for domain api.prod.com: x509: certificate has expired on 2026-08-10T00:00:00Z.",
+        "trace_id": "trace-tls-17",
+        "span_id": "span-cert-expired"
+      }
+    ],
+    "metrics_snapshot": [
+      {
+        "timestamp": "2026-08-10T18:30:00.000Z",
+        "cert_days_until_expiration": 0
+      }
+    ]
+  },
+  "injected_chaos_context": {
+    "active_infrastructure_mutations": "X.509 TLS certificate expiration on ingress-gateway."
+  },
+  "agent_instruction": "Analyze TLS certificate expiration and output cert-manager renew/re-issue commands."
+}

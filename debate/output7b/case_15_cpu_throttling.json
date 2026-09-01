@@ -1,0 +1,93 @@
+{
+    "incident_id": "case_15_cpu_throttling",
+    "timestamp": "2026-08-11T15:55:01.424244",
+    "problem": "### INCIDENT CONTEXT [case_15_cpu_throttling]\n- **Target Service**: `search-indexer` | **Severity**: `MEDIUM`\n- **Role**: elasticsearch-worker\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: Kubernetes pod CPU limit set too low causing cgroup CFS throttling.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `WARN [search-indexer] cgroups CPU quota exhausted; throttled for 450ms.`\n- **Top Log Samples**:\n  - [2026-08-10T18:20:00.000Z] WARN: [search-indexer] CFS throttling active: 85% of CPU periods throttled (cpu_usage=99.2%).\n- **Metrics**: cpu_usage_percent=99.2, container_cpu_throttled_periods_total=450\n\n### TASK INSTRUCTION\nAnalyze cgroup CPU quota throttling and recommend safe pod resource limit increases.",
+    "round_1": {
+        "optimist": {
+            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Recovery Engineer focused on rapid service restoration.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot max 15 words>\", \"primary_component\": \"<one of: Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"evidence\": \"<exact log line or metric you relied on>\", \"triage\": \"<0-5 min actions>\", \"stab\": \"<5-60 min actions>\", \"rca\": \"<root cause grounded in the evidence>\", \"conf\": 0.95}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be one of the listed values.\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Focus on fastest safe recovery. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_15_cpu_throttling]\n- **Target Service**: `search-indexer` | **Severity**: `MEDIUM`\n- **Role**: elasticsearch-worker\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: Kubernetes pod CPU limit set too low causing cgroup CFS throttling.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `WARN [search-indexer] cgroups CPU quota exhausted; throttled for 450ms.`\n- **Top Log Samples**:\n  - [2026-08-10T18:20:00.000Z] WARN: [search-indexer] CFS throttling active: 85% of CPU periods throttled (cpu_usage=99.2%).\n- **Metrics**: cpu_usage_percent=99.2, container_cpu_throttled_periods_total=450\n\n### TASK INSTRUCTION\nAnalyze cgroup CPU quota throttling and recommend safe pod resource limit increases.",
+            "response": {
+                "logic": "Increase CPU limits to prevent throttling.",
+                "primary_component": "CPU",
+                "evidence": "[search-indexer] CFS throttling active: 85% of CPU periods throttled (cpu_usage=99.2%).",
+                "triage": "Check current CPU limit, increase by 10-20%.",
+                "stab": "Apply new limits, monitor for 30 minutes.",
+                "rca": "Initial limits were too low causing CFS throttling.",
+                "conf": 0.95
+            },
+            "latency": 8.38
+        },
+        "critic": {
+            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Reliability Engineer focused on operational risk, safety, and preventing secondary outages.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot safety check max 15 words>\", \"primary_component\": \"<one of: Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"evidence\": \"<exact log line or metric you relied on>\", \"triage\": \"<0-5 min risk-mitigated actions>\", \"stab\": \"<5-60 min stabilization steps>\", \"rca\": \"<root cause grounded in the evidence>\", \"conf\": 0.90}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be one of the listed values.\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Focus on zero data loss and safe rollbacks. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_15_cpu_throttling]\n- **Target Service**: `search-indexer` | **Severity**: `MEDIUM`\n- **Role**: elasticsearch-worker\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: Kubernetes pod CPU limit set too low causing cgroup CFS throttling.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `WARN [search-indexer] cgroups CPU quota exhausted; throttled for 450ms.`\n- **Top Log Samples**:\n  - [2026-08-10T18:20:00.000Z] WARN: [search-indexer] CFS throttling active: 85% of CPU periods throttled (cpu_usage=99.2%).\n- **Metrics**: cpu_usage_percent=99.2, container_cpu_throttled_periods_total=450\n\n### TASK INSTRUCTION\nAnalyze cgroup CPU quota throttling and recommend safe pod resource limit increases.",
+            "response": {
+                "logic": "Check CPU usage; increase limits if throttling.",
+                "primary_component": "CPU",
+                "evidence": "WARN [search-indexer] CFS throttling active: 85% of CPU periods throttled (cpu_usage=99.2%).",
+                "triage": "Review current resource limits, identify safe increases.",
+                "stab": "Increase CPU limit by 50%, monitor for 1 hour.",
+                "rca": "Insufficient CPU resources causing CFS throttling.",
+                "conf": 0.9
+            },
+            "latency": 20.29
+        },
+        "fact_checker": {
+            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Verification Engineer focused on log and telemetry evidence validation.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot evidence verification max 15 words>\", \"primary_component\": \"<one of: Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"evidence\": \"<exact log line or metric you relied on>\", \"triage\": \"<0-5 min evidence checks>\", \"stab\": \"<5-60 min metric validations>\", \"rca\": \"<grounded root cause analysis>\", \"conf\": 0.95}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be one of the listed values.\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Base analysis strictly on provided logs and metrics. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_15_cpu_throttling]\n- **Target Service**: `search-indexer` | **Severity**: `MEDIUM`\n- **Role**: elasticsearch-worker\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: Kubernetes pod CPU limit set too low causing cgroup CFS throttling.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `WARN [search-indexer] cgroups CPU quota exhausted; throttled for 450ms.`\n- **Top Log Samples**:\n  - [2026-08-10T18:20:00.000Z] WARN: [search-indexer] CFS throttling active: 85% of CPU periods throttled (cpu_usage=99.2%).\n- **Metrics**: cpu_usage_percent=99.2, container_cpu_throttled_periods_total=450\n\n### TASK INSTRUCTION\nAnalyze cgroup CPU quota throttling and recommend safe pod resource limit increases.",
+            "response": {
+                "logic": "Verify CPU usage and throttling periods to adjust limits.",
+                "primary_component": "CPU",
+                "evidence": "[2026-08-10T18:20:00.000Z] WARN: [search-indexer] CFS throttling active: 85% of CPU periods throttled (cpu_usage=99.2%).",
+                "triage": "3 min",
+                "stab": "15 min",
+                "rca": "Increase pod CPU limit to reduce throttling.",
+                "conf": 0.95
+            },
+            "latency": 13.89
+        }
+    },
+    "consensus": {
+        "score": 0.88,
+        "threshold": 0.85,
+        "debate_required": false
+    },
+    "round_2": null,
+    "orchestrator": {
+        "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are the Lead Incident Commander. Synthesize agent perspectives into ONE definitive JSON decision.\nOutput ONLY valid JSON matching this exact schema:\n{\"consensus_rc\": \"<Root Cause>\", \"primary_component\": \"<Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"consensus_quality\": \"<HIGH|MEDIUM|LOW>\", \"final_triage\": \"<Immediate Fix>\", \"final_stab\": \"<Stabilization Plan>\", \"final_rca\": \"<Long-Term Prevention>\", \"action_commands\": [\"<exact_remediation_command_1>\"], \"confidence\": <0-100 integer>, \"reasoning\": \"<1-sentence justification citing evidence>\"}\n\nRules:\n- Keep total output under 120 words.\n- primary_component MUST be one of the listed values and MUST match the component the majority of agents identified.\n- action_commands MUST be safe, executable, and reference the implicated service/component from the telemetry. NEVER output destructive commands (no delete/drop/flushall/rm -rf/scale to 0).\n- Calculate confidence from EVIDENCE AGREEMENT: if agents converge on the same grounded component, confidence >= 90; if they diverge, confidence <= 60.\n- Pick the technically strongest, safest path. Output strictly valid JSON.\n\n[USER PROMPT]:\nIncident Summary:\n### INCIDENT CONTEXT [case_15_cpu_throttling]\n- **Target Service**: `search-indexer` | **Severity**: `MEDIUM`\n\nAgent JSON Analyses:\n\n--- OPTIMIST ---\n{\"logic\": \"Increase CPU limits to prevent throttling.\", \"primary_component\": \"CPU\", \"evidence\": \"[search-indexer] CFS throttling active: 85% of CPU periods throttled (cpu_usage=99.2%).\", \"triage\": \"Check current CPU limit, increase by 10-20%.\", \"stab\": \"Apply new limits, monitor for 30 minutes.\", \"rca\": \"Initial limits were too low causing CFS throttling.\", \"conf\": 0.95}\n\n--- CRITIC ---\n{\"logic\": \"Check CPU usage; increase limits if throttling.\", \"primary_component\": \"CPU\", \"evidence\": \"WARN [search-indexer] CFS throttling active: 85% of CPU periods throttled (cpu_usage=99.2%).\", \"triage\": \"Review current resource limits, identify safe increases.\", \"stab\": \"Increase CPU limit by 50%, monitor for 1 hour.\", \"rca\": \"Insufficient CPU resources causing CFS throttling.\", \"conf\": 0.9}\n\n--- FACT_CHECKER ---\n{\"logic\": \"Verify CPU usage and throttling periods to adjust limits.\", \"primary_component\": \"CPU\", \"evidence\": \"[2026-08-10T18:20:00.000Z] WARN: [search-indexer] CFS throttling active: 85% of CPU periods throttled (cpu_usage=99.2%).\", \"triage\": \"3 min\", \"stab\": \"15 min\", \"rca\": \"Increase pod CPU limit to reduce throttling.\", \"conf\": 0.95}\n",
+        "technical_solution": {
+            "consensus_rc": "Insufficient CPU resources causing CFS throttling.",
+            "primary_component": "CPU",
+            "consensus_quality": "HIGH",
+            "final_triage": "Increase CPU limit by 10-20%, monitor for 30 minutes.",
+            "final_stab": "Apply new limits, monitor for 30 minutes. Adjust if necessary based on telemetry.",
+            "final_rca": "Initial limits were too low causing CFS throttling; ensure future resource planning accounts for peak usage.",
+            "action_commands": [
+                "kubectl edit deploy search-indexer -n <namespace> --patch='spec.template.spec.containers[0].resources.limits.cpu: 2.5'"
+            ],
+            "confidence": 93,
+            "reasoning": "Agents agreed on CPU throttling and recommended increasing limits, with evidence of high CPU usage.",
+            "calculated_confidence": 88,
+            "safety_violation": false,
+            "scoring_metadata": {
+                "safety_violation": false,
+                "blocked_command": null,
+                "veto_reason": null,
+                "semantic_similarity": 0.609,
+                "outlier_agent": "fact_checker",
+                "component_agreement": 1.0,
+                "evidence_grounding": 0.653,
+                "divergence_penalty": 0,
+                "evidence_mapping_penalty": 0,
+                "schema_bonus": 10,
+                "parse_failures": 0,
+                "telemetry_hazard_detected": false,
+                "difficulty_prior": 1.0
+            }
+        },
+        "confidence": "88%",
+        "latency": 9.81
+    },
+    "performance": {
+        "round1_time": 20.83,
+        "round2_time": 0.0,
+        "orchestrator_time": 9.81,
+        "total_pipeline_time": 30.71
+    }
+}

@@ -1,0 +1,55 @@
+{
+  "incident_id": "case_12_redis_memory_eviction",
+  "run_timestamp": "2026-09-01T15:51:00.413631+00:00",
+  "gate_decision": "EXECUTED",
+  "confidence_score": 0.72,
+  "human_intervention_required": false,
+  "message": null,
+  "before_state": {
+    "target": "shadow-redis",
+    "status": "running",
+    "running": true,
+    "paused": false,
+    "memory_limit_bytes": 67108864,
+    "nano_cpus": 0,
+    "cpu_quota": 20000,
+    "captured_at": "2026-09-01T15:50:58.963557+00:00"
+  },
+  "agent_proposal": {
+    "tool": "run_config_command",
+    "target": "shadow-redis",
+    "parameters": {
+      "config_key": "maxmemory-policy",
+      "value": "volatile-lru"
+    },
+    "reasoning": "Fix instructs setting maxmemory-policy to volatile-lru to prevent OOM errors on key insertion."
+  },
+  "guardrail_result": {
+    "passed": true,
+    "reason": null
+  },
+  "execution_result": {
+    "target": "shadow-redis",
+    "tool": "run_config_command",
+    "config_key": "maxmemory-policy",
+    "value": "volatile-lru",
+    "exit_code": 0,
+    "output": "Warning: Using a password with '-a' or '-u' option on the command line interface may not be safe.\nOK"
+  },
+  "after_state": {
+    "target": "shadow-redis",
+    "status": "running",
+    "health": "healthy",
+    "maxmemory-policy": "volatile-lru"
+  },
+  "fault_cleared": true,
+  "performance": {
+    "safety_check_time_s": 0.0,
+    "agent_proposal_time_s": 0.0,
+    "guardrail_check_time_s": 0.0,
+    "execution_time_s": 0.2488,
+    "settle_wait_time_s": 1.0005,
+    "state_recheck_time_s": 0.1997,
+    "total_pipeline_time_s": 1.4759
+  }
+}

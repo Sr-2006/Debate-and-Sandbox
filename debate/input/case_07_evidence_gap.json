@@ -1,0 +1,54 @@
+{
+  "system_context": {
+    "objective": "Perform automated Multi-Agent Root Cause Analysis (RCA) and recommend corrective actions.",
+    "environment": "Kubernetes (EKS), Go, Redis",
+    "current_health_score": 60,
+    "active_warnings": 5
+  },
+  "incident_event": {
+    "incident_id": "case_07_evidence_gap",
+    "target_service": "auth-service",
+    "priority_score": 75.0,
+    "severity": "MEDIUM",
+    "occurrence_count": 120
+  },
+  "infrastructure_topology": {
+    "role": "jwt-issuer",
+    "downstream_dependencies": [
+      "redis-cache"
+    ],
+    "exposed_ports": ["8081:8081"]
+  },
+  "service_health_status": {
+    "docker_status": "running",
+    "health_check": "healthy",
+    "dependency_states": {
+      "redis-cache": {
+        "status": "running",
+        "health": "healthy"
+      }
+    }
+  },
+  "telemetry_evidence": {
+    "log_cluster_template": "WARN [auth-service] High CPU usage during RSA 4096 key signature verification.",
+    "log_samples": [
+      {
+        "timestamp": "2026-08-10T17:30:00.000Z",
+        "level": "WARN",
+        "content": "[auth-service] CPU thread pool saturated during JWT signature generation.",
+        "trace_id": "trace-gap-07",
+        "span_id": "span-cpu"
+      }
+    ],
+    "metrics_snapshot": [
+      {
+        "timestamp": "2026-08-10T17:30:00.000Z",
+        "cpu_percent": 98.5
+      }
+    ]
+  },
+  "injected_chaos_context": {
+    "active_infrastructure_mutations": "CPU saturation during JWT key signing; zero database involvement reported in telemetry."
+  },
+  "agent_instruction": "Analyze auth-service CPU telemetry and output remediation steps."
+}

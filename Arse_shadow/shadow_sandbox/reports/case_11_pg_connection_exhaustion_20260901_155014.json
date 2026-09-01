@@ -1,0 +1,35 @@
+{
+  "incident_id": "case_11_pg_connection_exhaustion",
+  "run_timestamp": "2026-09-01T15:50:14.701912+00:00",
+  "gate_decision": "BLOCKED_LOW_CONFIDENCE",
+  "confidence_score": 0.64,
+  "human_intervention_required": true,
+  "message": "Execution halted: Confidence ratio 0.64 is below the 0.70 safety threshold.",
+  "before_state": null,
+  "agent_proposal": {
+    "tool": "run_query",
+    "target": "shadow-postgres-db",
+    "parameters": {
+      "statement_type": "alter_system_set",
+      "setting": "max_connections",
+      "value": 200
+    },
+    "reasoning": "Fix instructs adjusting max_connections to 200; resolving database connection pool saturation."
+  },
+  "guardrail_result": {
+    "passed": true,
+    "reason": null
+  },
+  "execution_result": null,
+  "after_state": null,
+  "fault_cleared": null,
+  "performance": {
+    "safety_check_time_s": 0.0,
+    "agent_proposal_time_s": 0.0,
+    "guardrail_check_time_s": 0.0,
+    "execution_time_s": null,
+    "settle_wait_time_s": null,
+    "state_recheck_time_s": null,
+    "total_pipeline_time_s": 0.1341
+  }
+}
