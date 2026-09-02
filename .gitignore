@@ -4,6 +4,7 @@ __pycache__/
 *.log
 *.db
 .DS_Store
-Arse_shadow/shadow_sandbox/reports/*.json
-output/
-
+debate/output/*
+reports/*
+Arse_shadow/shadow_sandbox/reports/*
+output/*

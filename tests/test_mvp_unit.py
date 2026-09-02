@@ -1,6 +1,8 @@
 import os
 import json
 import pytest
+os.environ["DEBATE_MOCK_LLM"] = "1"
+
 from contracts.validation import validate_envelope, get_capabilities, is_mvp_supported
 from debate.action_publisher import build_action_proposed
 from shadow_sandbox.run_pipeline import run_phase4_pipeline
