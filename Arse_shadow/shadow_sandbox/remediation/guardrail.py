@@ -144,8 +144,20 @@ def check_guardrail(proposal: Dict[str, Any]) -> Dict[str, Any]:
 
         return {"passed": True, "reason": None}
 
-    # 4. Standard service restart or generic tool
-    elif tool in ["restart_service", "read_state"]:
+    # 4. Standard service restart, registered capabilities, or generic safe tools
+    elif tool in [
+        "restart_service", "read_state", "container.restart",
+        "workload.replicas.scale", "workload.resources.patch", "workload.rollout.restart",
+        "tls.certificate.renew", "node.cordon", "node.drain",
+        "cilium.policy.reload", "cilium.policy.inspect",
+        "ceph.health.inspect", "storage.snapshot.restore",
+        "grpc.workload.restart", "ingress.rate_limit.patch",
+        "observe.logs.search", "observe.metrics.query",
+        "postgres.setting.update", "postgres.lock.diagnose", "postgres.wal.diagnose", "postgres.wal.archive_cleanup",
+        "redis.eviction_policy.update"
+    ]:
         return {"passed": True, "reason": None}
 
-    return {"passed": True, "reason": None}
+    # Fail-closed for unknown target or tool combinations
+    return {"passed": False, "reason": f"Guardrail fail-closed: unknown target '{target}' or tool '{tool}'"}
+
