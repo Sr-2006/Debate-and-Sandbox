@@ -7,7 +7,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, List
 
-from config import BASE_DIR
+from debate.config import BASE_DIR
+
 from contracts.canonical_json import canonicalize_json, compute_payload_hash
 from contracts.models import ActionProposedV2Envelope, Intent, TargetRef, SourceRef, Phase3Confidence
 from contracts.validation import validate_envelope, ReasonCode

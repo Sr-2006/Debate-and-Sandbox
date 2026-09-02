@@ -24,10 +24,11 @@ jobs:
 
       - name: Run MVP Unit Tests
         run: |
-          pytest -q tests/test_mvp_unit.py
+          python -m pytest -q tests/test_mvp_unit.py -x -vv
       - name: Run MVP E2E Tests
         run: |
-          pytest -q tests/test_mvp_e2e.py
+          python -m pytest -q tests/test_mvp_e2e.py
+
       - name: Run Full MVP 22-Case Pipeline
         run: |
           python run_mvp_pipeline.py --all
