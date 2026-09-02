@@ -16,18 +16,15 @@ class RedisVerifier(BaseVerifier):
             try:
                 res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
                 if res.returncode != 0:
-                    if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
-                        return {"passed": True, "target": shadow_target, "verifier": "RedisVerifier", "reason": f"Redis policy verified: '{expected_policy}' (expected '{expected_policy}')"}
                     return {"passed": False, "target": shadow_target, "verifier": "RedisVerifier", "reason": f"ERROR: redis-cli CONFIG GET failed: {res.stderr.strip()}"}
                 output = res.stdout.strip()
                 passed = expected_policy in output
                 return {"passed": passed, "target": shadow_target, "verifier": "RedisVerifier", "reason": f"Redis policy verified: '{output}' (expected '{expected_policy}')"}
             except Exception as e:
-                if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
-                    return {"passed": True, "target": shadow_target, "verifier": "RedisVerifier", "reason": f"Redis policy verified: '{expected_policy}' (expected '{expected_policy}')"}
                 return {"passed": False, "target": shadow_target, "verifier": "RedisVerifier", "reason": f"ERROR: Redis verification failed: {str(e)}"}
 
         return {"passed": True, "target": shadow_target, "verifier": "RedisVerifier", "reason": "Redis verification completed"}
+
 
 
 class KubernetesVerifier(BaseVerifier):

@@ -1,6 +1,6 @@
 {
     "incident_id": "case_01_semantic_consensus",
-    "timestamp": "2026-09-02T19:48:39.696797",
+    "timestamp": "2026-09-02T19:59:41.766426",
     "problem": "### INCIDENT CONTEXT [case_01_semantic_consensus]\n- **Target Service**: `user-service` | **Severity**: `CRITICAL`\n- **Role**: auth-and-user-profile-api\n- **Target Status**: `running` (failing)\n- **Dependencies**:\n  - `redis-cache`: running (unhealthy)\n- \u26a0\ufe0f **Active Mutation**: Redis heap memory allocation exceeded maxmemory threshold causing OutOfMemory RAM exhaustion.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `FATAL [user-service] java.lang.OutOfMemoryError: Java heap space`\n- **Top Log Samples**:\n  - [2026-08-10T17:00:00.000Z] FATAL: [user-service] OutOfMemoryError: Java heap space exhausted (RAM 100% utilized).\n- **Metrics**: memory_usage_percent=99.9, cpu_percent=15.0\n\n### TASK INSTRUCTION\nDetermine the memory failure root cause and output a safe remediation plan.",
     "round_1": {
         "optimist": {
@@ -54,9 +54,9 @@
         "latency": 0.0
     },
     "performance": {
-        "round1_time": 2.93,
+        "round1_time": 2.59,
         "round2_time": 0.0,
         "orchestrator_time": 0.0,
-        "total_pipeline_time": 2.93
+        "total_pipeline_time": 2.59
     }
 }

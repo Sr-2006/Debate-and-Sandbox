@@ -1,6 +1,6 @@
 # Multi-Agent Debate Execution Report: case_18_kernel_panic
-**Timestamp:** `2026-09-02T19:49:32.111831`  
-**Total Pipeline Latency:** `3.06s`  
+**Timestamp:** `2026-09-02T20:00:32.988091`  
+**Total Pipeline Latency:** `3.14s`  
 **Consensus Score:** `0.0` (Threshold: `0.85`)  
 **Round 2 Debated:** `No (Single Pass Optimization)`  
 **Calculated Confidence Score:** `0.0`
@@ -27,10 +27,10 @@ Analyze Linux kernel panic telemetry and output node drain and cordoning command
 ## 2. Performance & Timing Benchmarks
 | Pipeline Phase | Duration (seconds) |
 | :--- | :--- |
-| Round 1 Analysis | 3.06s |
+| Round 1 Analysis | 3.14s |
 | Round 2 Iterative Debate | 0.0s |
 | Orchestrator Synthesis | 0.0s |
-| **Total Execution Latency** | **3.06s** |
+| **Total Execution Latency** | **3.14s** |
 
 ## 3. Round 1: Independent Agent Analysis
 ### RECOVERY ENGINEER (Optimist) (Latency: 0.0s)

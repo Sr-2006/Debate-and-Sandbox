@@ -1,6 +1,6 @@
 {
     "incident_id": "case_11_pg_connection_exhaustion",
-    "timestamp": "2026-09-02T19:49:10.222335",
+    "timestamp": "2026-09-02T20:00:11.705104",
     "problem": "### INCIDENT CONTEXT [case_11_pg_connection_exhaustion]\n- **Target Service**: `postgres-db` | **Severity**: `CRITICAL`\n- **Role**: primary-relational-database\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: PostgreSQL backend connection pool maxed out at 100/100 connections.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `FATAL [postgres-db] FATAL: remaining connection slots are reserved for non-replication superuser connections`\n- **Top Log Samples**:\n  - [2026-08-10T18:00:00.000Z] FATAL: [postgres-db] FATAL: sorry, too many clients already. Active connections=100/100.\n- **Metrics**: active_connections=100, max_connections=100\n\n### TASK INSTRUCTION\nIdentify PostgreSQL connection pool exhaustion and output safe connection pool reset steps.",
     "round_1": {
         "optimist": {

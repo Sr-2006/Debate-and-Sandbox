@@ -1,6 +1,6 @@
 {
     "incident_id": "case_21_ingress_rate_limit",
-    "timestamp": "2026-09-02T19:49:41.190277",
+    "timestamp": "2026-09-02T20:00:41.970716",
     "problem": "### INCIDENT CONTEXT [case_21_ingress_rate_limit]\n- **Target Service**: `public-api` | **Severity**: `MEDIUM`\n- **Role**: public-facing-proxy\n- **Target Status**: `running` (healthy)\n- \u26a0\ufe0f **Active Mutation**: Strict Nginx Ingress annotation limit-rps set too aggressively causing legit client 429 drops.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `WARN [public-api] HTTP 429 Too Many Requests: local_rate_limiting_k8s_ingress active`\n- **Top Log Samples**:\n  - [2026-08-10T18:50:00.000Z] WARN: [public-api] HTTP 429: Rate limit exceeded (100 req/sec limit reached by IP 192.168.1.50).\n- **Metrics**: rate_limit_429_count=12000\n\n### TASK INSTRUCTION\nAnalyze HTTP 429 rate limiting drops and output safe Nginx Ingress rate limit relaxation commands.",
     "round_1": {
         "optimist": {
@@ -51,9 +51,9 @@
         "latency": 0.0
     },
     "performance": {
-        "round1_time": 2.99,
+        "round1_time": 2.74,
         "round2_time": 0.0,
         "orchestrator_time": 0.0,
-        "total_pipeline_time": 2.99
+        "total_pipeline_time": 2.75
     }
 }

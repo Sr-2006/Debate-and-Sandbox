@@ -182,9 +182,9 @@ def test_5_supported_mutation_captures_real_pre_state():
         "human_summary": "Postgres setting test"
     }
 
-    p4_result = run_phase4_pipeline(envelope)
+    p4_result = run_phase4_pipeline(envelope, is_simulated=True)
     assert "before_observations" in p4_result
-    assert p4_result["status"] in ["SANDBOX_VERIFIED", "SANDBOX_FAILED_ROLLED_BACK"]
+    assert p4_result["status"] in ["SANDBOX_VERIFIED", "SIMULATION_VERIFIED", "SANDBOX_FAILED_ROLLED_BACK"]
 
 
 def test_6_verification_failure_restores_pre_state():
@@ -223,8 +223,10 @@ def test_6_verification_failure_restores_pre_state():
         "human_summary": "Redis policy test"
     }
 
-    p4_result = run_phase4_pipeline(envelope)
-    assert p4_result["status"] in ["SANDBOX_VERIFIED", "SANDBOX_FAILED_ROLLED_BACK"]
+    p4_result = run_phase4_pipeline(envelope, is_simulated=True)
+    assert p4_result["status"] in ["SANDBOX_VERIFIED", "SIMULATION_VERIFIED", "SANDBOX_FAILED_ROLLED_BACK"]
+
+
     if p4_result["status"] == "SANDBOX_FAILED_ROLLED_BACK":
         assert p4_result["rollback"]["attempted"] is True
 

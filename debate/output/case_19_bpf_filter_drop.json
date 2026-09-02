@@ -1,6 +1,6 @@
 {
     "incident_id": "case_19_bpf_filter_drop",
-    "timestamp": "2026-09-02T19:49:35.227259",
+    "timestamp": "2026-09-02T20:00:36.173131",
     "problem": "### INCIDENT CONTEXT [case_19_bpf_filter_drop]\n- **Target Service**: `mesh-proxy` | **Severity**: `HIGH`\n- **Role**: ebpf-dataplane-filter\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: Cilium eBPF network policy map entry drop causing inter-pod packet rejection.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `ERROR [mesh-proxy] bpf_map_lookup_elem failed; Cilium eBPF packet drop policy active.`\n- **Top Log Samples**:\n  - [2026-08-10T18:40:00.000Z] ERROR: [mesh-proxy] Cilium BPF datapath: Policy drop (Identity 104 -> Identity 502) packet dropped by eBPF map filter.\n- **Metrics**: cilium_drop_count_total=3400\n\n### TASK INSTRUCTION\nAnalyze eBPF network policy packet drops and output Cilium policy reload commands.",
     "round_1": {
         "optimist": {
@@ -51,9 +51,9 @@
         "latency": 0.0
     },
     "performance": {
-        "round1_time": 2.96,
+        "round1_time": 2.85,
         "round2_time": 0.0,
         "orchestrator_time": 0.0,
-        "total_pipeline_time": 2.96
+        "total_pipeline_time": 2.85
     }
 }

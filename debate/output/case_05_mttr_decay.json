@@ -1,6 +1,6 @@
 {
     "incident_id": "case_05_mttr_decay",
-    "timestamp": "2026-09-02T19:48:51.948368",
+    "timestamp": "2026-09-02T19:59:53.496052",
     "problem": "### INCIDENT CONTEXT [case_05_mttr_decay]\n- **Target Service**: `report-service` | **Severity**: `MEDIUM`\n- **Role**: analytics-reporter\n- **Target Status**: `running` (healthy)\n- **Dependencies**:\n  - `redis-cache`: running (healthy)\n- \u26a0\ufe0f **Active Mutation**: Heavy report generation queue causing systemic latency exceeding 20 seconds threshold.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `WARN [report-service] Report generation queue latency high (25000ms).`\n- **Top Log Samples**:\n  - [2026-08-10T17:20:00.000Z] WARN: [report-service] Batch process took 25 seconds to process 10,000 PDF requests.\n- **Metrics**: queue_delay_seconds=25.0\n\n### TASK INSTRUCTION\nAnalyze report generation delay and output remediation steps.",
     "round_1": {
         "optimist": {
@@ -56,9 +56,9 @@
         "latency": 0.0
     },
     "performance": {
-        "round1_time": 3.09,
+        "round1_time": 2.84,
         "round2_time": 0.0,
         "orchestrator_time": 0.0,
-        "total_pipeline_time": 3.09
+        "total_pipeline_time": 2.84
     }
 }

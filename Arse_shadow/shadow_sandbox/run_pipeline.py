@@ -25,10 +25,10 @@ from contracts.reason_codes import ReasonCode, TerminalState
 from contracts.validation import validate_envelope, get_capabilities, is_mvp_supported
 from shadow_sandbox.persistence import SandboxPersistence
 from shadow_sandbox.state_machine import ExecutionStateMachine
-from shadow_sandbox.remediation.executors.docker_executor import DockerExecutor
-from shadow_sandbox.remediation.executors.postgres_executor import PostgresExecutor
-from shadow_sandbox.remediation.executors.redis_executor import RedisExecutor
-from shadow_sandbox.remediation.verifiers.service_health import ServiceHealthVerifier
+from shadow_sandbox.remediation.executors.docker_executor import DockerExecutor, MockDockerExecutor
+from shadow_sandbox.remediation.executors.postgres_executor import PostgresExecutor, MockPostgresExecutor
+from shadow_sandbox.remediation.executors.redis_executor import RedisExecutor, MockRedisExecutor
+from shadow_sandbox.remediation.verifiers.service_health import ServiceHealthVerifier, MockVerifier
 
 from shadow_sandbox.remediation.verifiers.postgres_verifier import PostgresVerifier
 from shadow_sandbox.remediation.verifiers.redis_verifier import RedisVerifier
@@ -36,7 +36,14 @@ from shadow_sandbox.faults.fault_agent import FaultSelectionAgent
 from shadow_sandbox.faults.fault_injector import recover_all, log_fault_event
 
 
-def get_executor(executor_name: str):
+def get_executor(executor_name: str, is_simulated: bool = False):
+    if is_simulated:
+        if executor_name == "postgres_executor":
+            return MockPostgresExecutor()
+        elif executor_name == "redis_executor":
+            return MockRedisExecutor()
+        else:
+            return MockDockerExecutor()
     if executor_name == "postgres_executor":
         return PostgresExecutor()
     elif executor_name == "redis_executor":
@@ -45,7 +52,9 @@ def get_executor(executor_name: str):
         return DockerExecutor()
 
 
-def get_verifier(verifier_name: str):
+def get_verifier(verifier_name: str, is_simulated: bool = False):
+    if is_simulated:
+        return MockVerifier()
     if verifier_name == "postgres_verifier":
         return PostgresVerifier()
     elif verifier_name == "redis_verifier":
@@ -54,60 +63,21 @@ def get_verifier(verifier_name: str):
         return ServiceHealthVerifier()
 
 
-def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """
-    Executes Phase 4 shadow sandbox in 7 explicit steps and returns structured phase_4 context block.
-    """
-    start_time = time.perf_counter()
-    incident_id = v2_envelope.get("incident_id", "case_unknown")
-    payload_hash = v2_envelope.get("payload_hash") or compute_payload_hash(v2_envelope)
-
-    sm = ExecutionStateMachine(incident_id, payload_hash)
-
-    # 1. Step 1: RECEIVED
-    sm.transition_to("RECEIVED", ReasonCode.DIAGNOSED, "Received Phase 4 handoff envelope")
-
-    # 2. Step 2: VALIDATED
-    is_valid, errs, val_reason = validate_envelope(v2_envelope)
-    if not is_valid:
-        sm.transition_to("VALIDATION_FAILED", val_reason, "; ".join(errs))
-        duration_ms = int((time.perf_counter() - start_time) * 1000)
-        return {
-            "status": "VALIDATION_FAILED",
-            "exact_input": v2_envelope,
-            "target": v2_envelope.get("target_ref", {}),
-            "attestation": {"attested": False, "detail": "; ".join(errs)},
-            "before_observations": {},
-            "fault_setup": {"injected": False},
-            "execution": {"capability": "unknown", "parameters": {}, "result": {}, "duration_ms": 0},
-            "after_observations": {},
-            "verification": {"passed": False},
-            "rollback": {"attempted": False, "result": None},
-            "cleanup": {"completed": True},
-            "state_history": sm.get_summary()["history"],
-            "duration_ms": duration_ms
-        }
-
-    sm.transition_to("VALIDATED", ReasonCode.DIAGNOSED, "Validated v2 envelope schema and catalog entry")
-
-    intents = v2_envelope.get("intents", [])
-    first_intent = intents[0] if intents else {}
-    intent_type = first_intent.get("intent_type", "NO_SUPPORTED_ACTION")
-    mode = first_intent.get("mode", "OBSERVE")
-    target_ref = first_intent.get("target_ref") or v2_envelope.get("target_ref") or {}
-    canonical_target = target_ref.get("canonical_name", "unknown-service")
-    shadow_target = canonical_target if canonical_target.startswith("shadow-") else f"shadow-{canonical_target}"
-    parameters = first_intent.get("parameters", {})
-    requires_human_approval = bool(first_intent.get("requires_human_approval", False) or v2_envelope.get("safety_violation", False))
-
-    capabilities = get_capabilities()
-    mapping_valid = intent_type in capabilities and intent_type != "NO_SUPPORTED_ACTION"
-def check_attestation(shadow_target: str, blocked: bool = False) -> Dict[str, Any]:
+def check_attestation(shadow_target: str, blocked: bool = False, is_simulated: bool = False) -> Dict[str, Any]:
     if blocked or not shadow_target or shadow_target in ["shadow-None", "shadow-unknown-service"]:
         return {
             "attempted": False,
             "attested": False,
             "reason": "Execution blocked before target attestation"
+        }
+    if is_simulated:
+        return {
+            "attempted": True,
+            "attested": True,
+            "simulated": True,
+            "target": shadow_target,
+            "container_id": "c1234567890a",
+            "status": "running"
         }
     try:
         import docker
@@ -121,14 +91,6 @@ def check_attestation(shadow_target: str, blocked: bool = False) -> Dict[str, An
             "status": container.status
         }
     except Exception as e:
-        if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("DEBATE_MOCK_LLM") == "1":
-            return {
-                "attempted": True,
-                "attested": True,
-                "target": shadow_target,
-                "container_id": "c1234567890a",
-                "status": "running"
-            }
         return {
             "attempted": True,
             "attested": False,
@@ -137,12 +99,13 @@ def check_attestation(shadow_target: str, blocked: bool = False) -> Dict[str, An
         }
 
 
-
-def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[str, Any]] = None, is_simulated: bool = False) -> Dict[str, Any]:
     """
     Executes Phase 4 shadow sandbox in 7 explicit steps and returns structured phase_4 context block.
     """
     start_time = time.perf_counter()
+    simulated_flag = is_simulated or bool(v2_envelope.get("simulated")) or bool(os.environ.get("DEBATE_MOCK_LLM") == "1")
+
     incident_id = v2_envelope.get("incident_id", "case_unknown")
     payload_hash = v2_envelope.get("payload_hash") or compute_payload_hash(v2_envelope)
 
@@ -279,7 +242,7 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
         }
 
     # Perform real target attestation check
-    attestation = check_attestation(shadow_target, blocked=False)
+    attestation = check_attestation(shadow_target, blocked=False, is_simulated=simulated_flag)
     if not attestation.get("attested"):
         sm.transition_to("ATTESTATION_FAILED", ReasonCode.ATTESTATION_FAILED, f"Target attestation failed for {shadow_target}")
         duration_ms = int((time.perf_counter() - start_time) * 1000)
@@ -303,8 +266,9 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
     sm.transition_to("OBSERVED_BEFORE", ReasonCode.DIAGNOSED, "Capturing target pre-state before mutation")
     executor_name = cap_meta.get("executor", "docker_executor")
     verifier_name = cap_meta.get("verifier", "service_health")
-    executor = get_executor(executor_name)
-    verifier = get_verifier(verifier_name)
+    executor = get_executor(executor_name, is_simulated=simulated_flag)
+    verifier = get_verifier(verifier_name, is_simulated=simulated_flag)
+
 
     # Optional Fault Injection if fault_spec provided
     fault_info = {"injected": False}
@@ -393,10 +357,11 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
     passed = bool(ver_res.get("passed", False))
 
     rollback_info = {"attempted": False, "result": None}
-    final_status = "SANDBOX_VERIFIED"
+    final_status = "SIMULATION_VERIFIED" if simulated_flag else "SANDBOX_VERIFIED"
 
     if passed:
-        final_status = "SANDBOX_VERIFIED"
+        final_status = "SIMULATION_VERIFIED" if simulated_flag else "SANDBOX_VERIFIED"
+
     else:
         # Perform rollback to captured pre-state
         rollback_info["attempted"] = True

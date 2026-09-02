@@ -1,6 +1,6 @@
 {
     "incident_id": "case_16_rabbitmq_queue_backlog",
-    "timestamp": "2026-09-02T19:49:25.734580",
+    "timestamp": "2026-09-02T20:00:26.864323",
     "problem": "### INCIDENT CONTEXT [case_16_rabbitmq_queue_backlog]\n- **Target Service**: `email-consumer` | **Severity**: `HIGH`\n- **Role**: amqp-message-consumer\n- **Target Status**: `running` (degraded)\n- **Dependencies**:\n  - `rabbitmq`: running (healthy)\n- \u26a0\ufe0f **Active Mutation**: Slow consumer processing causing AMQP queue message accumulation.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `WARN [email-consumer] Message unacknowledged backlog exceeded threshold (50000 msgs).`\n- **Top Log Samples**:\n  - [2026-08-10T18:25:00.000Z] WARN: [email-consumer] Consumer prefetch limit unacked count = 50000. Consumer processing latency high.\n- **Metrics**: messages_unacknowledged=50000, consumer_count=2\n\n### TASK INSTRUCTION\nAnalyze RabbitMQ message backlog and output consumer scale-out steps.",
     "round_1": {
         "optimist": {
@@ -51,9 +51,9 @@
         "latency": 0.0
     },
     "performance": {
-        "round1_time": 3.23,
+        "round1_time": 3.04,
         "round2_time": 0.0,
         "orchestrator_time": 0.0,
-        "total_pipeline_time": 3.24
+        "total_pipeline_time": 3.05
     }
 }

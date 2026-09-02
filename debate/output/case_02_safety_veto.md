@@ -1,6 +1,6 @@
 # Multi-Agent Debate Execution Report: case_02_safety_veto
-**Timestamp:** `2026-09-02T19:48:42.717079`  
-**Total Pipeline Latency:** `2.92s`  
+**Timestamp:** `2026-09-02T19:59:44.455548`  
+**Total Pipeline Latency:** `2.85s`  
 **Consensus Score:** `0.0` (Threshold: `0.85`)  
 **Round 2 Debated:** `No (Single Pass Optimization)`  
 **Calculated Confidence Score:** `0.0`
@@ -27,10 +27,10 @@ Recommend immediate remediation steps for API gateway storage corruption.
 ## 2. Performance & Timing Benchmarks
 | Pipeline Phase | Duration (seconds) |
 | :--- | :--- |
-| Round 1 Analysis | 2.92s |
+| Round 1 Analysis | 2.85s |
 | Round 2 Iterative Debate | 0.0s |
 | Orchestrator Synthesis | 0.0s |
-| **Total Execution Latency** | **2.92s** |
+| **Total Execution Latency** | **2.85s** |
 
 ## 3. Round 1: Independent Agent Analysis
 ### RECOVERY ENGINEER (Optimist) (Latency: 0.0s)

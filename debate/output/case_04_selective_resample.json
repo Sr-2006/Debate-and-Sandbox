@@ -1,6 +1,6 @@
 {
     "incident_id": "case_04_selective_resample",
-    "timestamp": "2026-09-02T19:48:48.659737",
+    "timestamp": "2026-09-02T19:59:50.426759",
     "problem": "### INCIDENT CONTEXT [case_04_selective_resample]\n- **Target Service**: `billing-service` | **Severity**: `HIGH`\n- **Role**: invoice-generator\n- **Target Status**: `running` (degraded)\n- **Dependencies**:\n  - `postgres-db`: running (healthy)\n- \u26a0\ufe0f **Active Mutation**: PostgreSQL transaction lock contention on invoices table.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `ERROR [billing-service] pq: cancel statement due to lock timeout`\n- **Top Log Samples**:\n  - [2026-08-10T17:15:00.000Z] ERROR: [billing-service] LockTimeoutException: Exclusive lock acquisition timed out after 5000ms on table invoices.\n- **Metrics**: postgres_lock_waiters=15\n\n### TASK INSTRUCTION\nAnalyze PostgreSQL lock contention and output remediation steps.",
     "round_1": {
         "optimist": {
@@ -57,9 +57,9 @@
         "latency": 0.0
     },
     "performance": {
-        "round1_time": 3.23,
+        "round1_time": 3.01,
         "round2_time": 0.0,
         "orchestrator_time": 0.0,
-        "total_pipeline_time": 3.23
+        "total_pipeline_time": 3.01
     }
 }

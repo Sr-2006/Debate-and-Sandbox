@@ -1,6 +1,6 @@
 {
     "incident_id": "case_09_borderline_route",
-    "timestamp": "2026-09-02T19:49:04.248729",
+    "timestamp": "2026-09-02T20:00:05.661885",
     "problem": "### INCIDENT CONTEXT [case_09_borderline_route]\n- **Target Service**: `notification-service` | **Severity**: `MEDIUM`\n- **Role**: email-and-sms-notifier\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: Intermittent third-party SMTP provider timeout producing partial consensus among agents.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `WARN [notification-service] SMTP gateway socket timeout on port 587.`\n- **Top Log Samples**:\n  - [2026-08-10T17:40:00.000Z] WARN: [notification-service] ETIMEDOUT connection to smtp.provider.com:587.\n- **Metrics**: smtp_timeout_count=45\n\n### TASK INSTRUCTION\nAnalyze notification service SMTP timeouts and output remediation steps.",
     "round_1": {
         "optimist": {
@@ -51,9 +51,9 @@
         "latency": 0.0
     },
     "performance": {
-        "round1_time": 2.92,
+        "round1_time": 2.98,
         "round2_time": 0.0,
         "orchestrator_time": 0.0,
-        "total_pipeline_time": 2.92
+        "total_pipeline_time": 2.98
     }
 }

@@ -1,6 +1,6 @@
 {
     "incident_id": "case_12_redis_memory_eviction",
-    "timestamp": "2026-09-02T19:49:13.384500",
+    "timestamp": "2026-09-02T20:00:14.856032",
     "problem": "### INCIDENT CONTEXT [case_12_redis_memory_eviction]\n- **Target Service**: `redis-cache` | **Severity**: `HIGH`\n- **Role**: in-memory-session-store\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: Redis cache memory cap maxmemory reached causing session eviction errors.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `OOM [redis-cache] OOM command not allowed when used memory > 'maxmemory'`\n- **Top Log Samples**:\n  - [2026-08-10T18:05:00.000Z] ERROR: [redis-cache] OOM command not allowed when used memory > 'maxmemory'. Eviction policy volatile-lru active.\n- **Metrics**: used_memory_bytes=2147483648, maxmemory_bytes=2147483648\n\n### TASK INSTRUCTION\nAnalyze Redis maxmemory exhaustion and output safe eviction policy adjustments.",
     "round_1": {
         "optimist": {
@@ -56,9 +56,9 @@
         "latency": 0.0
     },
     "performance": {
-        "round1_time": 3.11,
+        "round1_time": 2.99,
         "round2_time": 0.0,
         "orchestrator_time": 0.0,
-        "total_pipeline_time": 3.11
+        "total_pipeline_time": 2.99
     }
 }

@@ -1,6 +1,6 @@
 # Multi-Agent Debate Execution Report: case_01_semantic_consensus
-**Timestamp:** `2026-09-02T19:48:39.696797`  
-**Total Pipeline Latency:** `2.93s`  
+**Timestamp:** `2026-09-02T19:59:41.766426`  
+**Total Pipeline Latency:** `2.59s`  
 **Consensus Score:** `0.9` (Threshold: `0.85`)  
 **Round 2 Debated:** `No (Single Pass Optimization)`  
 **Calculated Confidence Score:** `90.0`
@@ -29,10 +29,10 @@ Determine the memory failure root cause and output a safe remediation plan.
 ## 2. Performance & Timing Benchmarks
 | Pipeline Phase | Duration (seconds) |
 | :--- | :--- |
-| Round 1 Analysis | 2.93s |
+| Round 1 Analysis | 2.59s |
 | Round 2 Iterative Debate | 0.0s |
 | Orchestrator Synthesis | 0.0s |
-| **Total Execution Latency** | **2.93s** |
+| **Total Execution Latency** | **2.59s** |
 
 ## 3. Round 1: Independent Agent Analysis
 ### RECOVERY ENGINEER (Optimist) (Latency: 0.0s)

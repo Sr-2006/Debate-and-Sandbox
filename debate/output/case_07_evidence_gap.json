@@ -1,6 +1,6 @@
 {
     "incident_id": "case_07_evidence_gap",
-    "timestamp": "2026-09-02T19:48:58.201886",
+    "timestamp": "2026-09-02T19:59:59.390412",
     "problem": "### INCIDENT CONTEXT [case_07_evidence_gap]\n- **Target Service**: `auth-service` | **Severity**: `MEDIUM`\n- **Role**: jwt-issuer\n- **Target Status**: `running` (healthy)\n- **Dependencies**:\n  - `redis-cache`: running (healthy)\n- \u26a0\ufe0f **Active Mutation**: CPU saturation during JWT key signing; zero database involvement reported in telemetry.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `WARN [auth-service] High CPU usage during RSA 4096 key signature verification.`\n- **Top Log Samples**:\n  - [2026-08-10T17:30:00.000Z] WARN: [auth-service] CPU thread pool saturated during JWT signature generation.\n- **Metrics**: cpu_percent=98.5\n\n### TASK INSTRUCTION\nAnalyze auth-service CPU telemetry and output remediation steps.",
     "round_1": {
         "optimist": {
@@ -56,9 +56,9 @@
         "latency": 0.0
     },
     "performance": {
-        "round1_time": 3.03,
+        "round1_time": 3.11,
         "round2_time": 0.0,
         "orchestrator_time": 0.0,
-        "total_pipeline_time": 3.03
+        "total_pipeline_time": 3.11
     }
 }

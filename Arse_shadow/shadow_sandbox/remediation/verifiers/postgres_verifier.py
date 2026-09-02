@@ -5,7 +5,7 @@ from typing import Dict, Any
 from .base import BaseVerifier
 
 class PostgresVerifier(BaseVerifier):
-    """Verifier for PostgreSQL setting updates, lock checks, and readiness postconditions."""
+    """Verifier for PostgreSQL setting updates, lock checks, and readiness postconditions strictly using live target."""
 
     def verify(self, target: str, action: str, parameters: Dict[str, Any], execution_result: Dict[str, Any]) -> Dict[str, Any]:
         shadow_target = target if target.startswith("shadow-") else f"shadow-{target}"
@@ -20,20 +20,16 @@ class PostgresVerifier(BaseVerifier):
             try:
                 res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
                 if res.returncode != 0:
-                    if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
-                        return {"passed": True, "target": shadow_target, "verifier": "PostgresVerifier", "reason": f"Setting {setting} verified: '{expected}' (expected '{expected}')"}
                     return {"passed": False, "target": shadow_target, "verifier": "PostgresVerifier", "reason": f"ERROR: psql SHOW {setting} failed: {res.stderr.strip()}"}
                 val = res.stdout.strip()
                 passed = (val == expected or expected.lower() in val.lower())
                 return {"passed": passed, "target": shadow_target, "verifier": "PostgresVerifier", "reason": f"Setting {setting} verified: '{val}' (expected '{expected}')"}
             except Exception as e:
-                if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
-                    return {"passed": True, "target": shadow_target, "verifier": "PostgresVerifier", "reason": f"Setting {setting} verified: '{expected}' (expected '{expected}')"}
                 return {"passed": False, "target": shadow_target, "verifier": "PostgresVerifier", "reason": f"ERROR: Postgres verification exception: {str(e)}"}
-
 
         elif action in ["postgres.lock.diagnose", "postgres.wal.diagnose"]:
             return {"passed": True, "target": shadow_target, "verifier": "PostgresVerifier", "reason": f"Diagnostics completed: {execution_result.get('output')}"}
 
         return {"passed": True, "target": shadow_target, "verifier": "PostgresVerifier", "reason": "Postgres verification completed"}
+
 

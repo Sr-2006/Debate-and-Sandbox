@@ -1,6 +1,6 @@
 {
     "incident_id": "case_15_cpu_throttling",
-    "timestamp": "2026-09-02T19:49:22.601669",
+    "timestamp": "2026-09-02T20:00:23.845129",
     "problem": "### INCIDENT CONTEXT [case_15_cpu_throttling]\n- **Target Service**: `search-indexer` | **Severity**: `MEDIUM`\n- **Role**: elasticsearch-worker\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: Kubernetes pod CPU limit set too low causing cgroup CFS throttling.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `WARN [search-indexer] cgroups CPU quota exhausted; throttled for 450ms.`\n- **Top Log Samples**:\n  - [2026-08-10T18:20:00.000Z] WARN: [search-indexer] CFS throttling active: 85% of CPU periods throttled (cpu_usage=99.2%).\n- **Metrics**: cpu_usage_percent=99.2, container_cpu_throttled_periods_total=450\n\n### TASK INSTRUCTION\nAnalyze cgroup CPU quota throttling and recommend safe pod resource limit increases.",
     "round_1": {
         "optimist": {
@@ -51,9 +51,9 @@
         "latency": 0.0
     },
     "performance": {
-        "round1_time": 3.05,
+        "round1_time": 2.94,
         "round2_time": 0.0,
         "orchestrator_time": 0.0,
-        "total_pipeline_time": 3.05
+        "total_pipeline_time": 2.94
     }
 }

@@ -12,7 +12,7 @@ ALLOWED_SETTINGS = {
 }
 
 class PostgresExecutor(BaseExecutor):
-    """Executor for PostgreSQL database operations."""
+    """Executor for PostgreSQL database operations strictly executing SQL on live target."""
 
     def execute(self, target: str, action: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         shadow_target = target if target.startswith("shadow-") else f"shadow-{target}"
@@ -26,7 +26,6 @@ class PostgresExecutor(BaseExecutor):
 
         elif action == "postgres.setting.update":
             setting = parameters.get("setting_name")
-
             value = parameters.get("value")
             if not setting or value is None:
                 return {"success": False, "target": shadow_target, "tool": action, "output": "ERROR: Missing setting_name or value"}
@@ -34,12 +33,10 @@ class PostgresExecutor(BaseExecutor):
             if setting not in ALLOWED_SETTINGS:
                 return {"success": False, "target": shadow_target, "tool": action, "output": f"ERROR: Setting '{setting}' is not in allowed settings allowlist"}
 
-            # Regex validation to prevent SQL injection in setting value
             str_val = str(value).strip()
             if not re.match(r"^[a-zA-Z0-9_\.\-]+$", str_val):
                 return {"success": False, "target": shadow_target, "tool": action, "output": f"ERROR: Setting value '{str_val}' failed strict format validation"}
 
-            # Query with validated setting name and sanitized value
             query = f"ALTER SYSTEM SET {setting} = '{str_val}'; SELECT pg_reload_conf();"
             return self._run_sql(shadow_target, query, action)
 
@@ -67,17 +64,23 @@ class PostgresExecutor(BaseExecutor):
             if res.returncode == 0:
                 return {"success": True, "target": target, "tool": action, "output": f"SUCCESS: {res.stdout.strip()}"}
             else:
-                if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
-                    if "SHOW" in query:
-                        return {"success": True, "target": target, "tool": action, "output": "SUCCESS: 100"}
-                    return {"success": True, "target": target, "tool": action, "output": f"SUCCESS: {query}"}
                 return {"success": False, "target": target, "tool": action, "output": f"ERROR: {res.stderr.strip()}"}
         except Exception as e:
-            if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
-                if "SHOW" in query:
-                    return {"success": True, "target": target, "tool": action, "output": "SUCCESS: 100"}
-                return {"success": True, "target": target, "tool": action, "output": f"SUCCESS: {query}"}
             return {"success": False, "target": target, "tool": action, "output": f"ERROR: Postgres SQL execution failed: {str(e)}"}
+
+
+class MockPostgresExecutor(BaseExecutor):
+    """Explicit mock adapter for simulated PostgreSQL operations."""
+
+    def execute(self, target: str, action: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        shadow_target = target if target.startswith("shadow-") else f"shadow-{target}"
+        if action == "postgres.setting.read":
+            return {"success": True, "target": shadow_target, "tool": action, "output": "SUCCESS: 100"}
+        elif action == "postgres.setting.update":
+            val = parameters.get("value", "200")
+            return {"success": True, "target": shadow_target, "tool": action, "output": f"SUCCESS: ALTER SYSTEM SET {parameters.get('setting_name')} = '{val}'"}
+        return {"success": True, "target": shadow_target, "tool": action, "output": "SUCCESS: ok"}
+
 
 
 

@@ -1,6 +1,6 @@
 {
     "incident_id": "case_03_guided_pivot",
-    "timestamp": "2026-09-02T19:48:45.682090",
+    "timestamp": "2026-09-02T19:59:47.354664",
     "problem": "### INCIDENT CONTEXT [case_03_guided_pivot]\n- **Target Service**: `order-processor` | **Severity**: `HIGH`\n- **Role**: order-queue-consumer\n- **Target Status**: `running` (degraded)\n- **Dependencies**:\n  - `rabbitmq-broker`: running (healthy)\n- \u26a0\ufe0f **Active Mutation**: Channel max configuration bottleneck on RabbitMQ connection pool.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `WARN [order-processor] Queue prefetch limit reached; connection dropped by peer.`\n- **Top Log Samples**:\n  - [2026-08-10T17:10:00.000Z] WARN: [order-processor] AmqpIOException: Connection reset by RabbitMQ broker due to channel channel-max limit (2048).\n- **Metrics**: rabbitmq_channels_open=2048\n\n### TASK INSTRUCTION\nAnalyze RabbitMQ channel exhaustion and output remediation steps.",
     "round_1": {
         "optimist": {
@@ -51,9 +51,9 @@
         "latency": 0.0
     },
     "performance": {
-        "round1_time": 2.9,
+        "round1_time": 3.0,
         "round2_time": 0.0,
         "orchestrator_time": 0.0,
-        "total_pipeline_time": 2.9
+        "total_pipeline_time": 3.0
     }
 }

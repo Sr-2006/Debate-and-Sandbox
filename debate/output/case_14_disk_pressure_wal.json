@@ -1,6 +1,6 @@
 {
     "incident_id": "case_14_disk_pressure_wal",
-    "timestamp": "2026-09-02T19:49:19.629211",
+    "timestamp": "2026-09-02T20:00:20.996230",
     "problem": "### INCIDENT CONTEXT [case_14_disk_pressure_wal]\n- **Target Service**: `postgres-db` | **Severity**: `CRITICAL`\n- **Role**: primary-db-storage\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: PostgreSQL WAL directory storage accumulation reaching 97% capacity.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `PANIC [postgres-db] could not write to log file pg_wal: No space left on device`\n- **Top Log Samples**:\n  - [2026-08-10T18:15:00.000Z] PANIC: [postgres-db] PANIC: could not write to file 'pg_wal/00000001000000A1000000F2': No space left on device (Disk 97%).\n- **Metrics**: disk_utilization_percent=97.4, pg_wal_directory_size_gb=45.0\n\n### TASK INSTRUCTION\nAnalyze PostgreSQL WAL disk pressure and output non-destructive WAL archive truncation commands.",
     "round_1": {
         "optimist": {
@@ -57,9 +57,9 @@
         "latency": 0.0
     },
     "performance": {
-        "round1_time": 2.92,
+        "round1_time": 2.79,
         "round2_time": 0.0,
         "orchestrator_time": 0.0,
-        "total_pipeline_time": 2.92
+        "total_pipeline_time": 2.79
     }
 }

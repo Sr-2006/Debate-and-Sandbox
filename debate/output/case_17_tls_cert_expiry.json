@@ -1,6 +1,6 @@
 {
     "incident_id": "case_17_tls_cert_expiry",
-    "timestamp": "2026-09-02T19:49:29.029657",
+    "timestamp": "2026-09-02T20:00:29.963714",
     "problem": "### INCIDENT CONTEXT [case_17_tls_cert_expiry]\n- **Target Service**: `ingress-gateway` | **Severity**: `CRITICAL`\n- **Role**: tls-termination-proxy\n- **Target Status**: `running` (failing)\n- \u26a0\ufe0f **Active Mutation**: X.509 TLS certificate expiration on ingress-gateway.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `FATAL [ingress-gateway] SSL_ERROR_SSL: certificate has expired (x509: certificate signed by unknown authority or expired)`\n- **Top Log Samples**:\n  - [2026-08-10T18:30:00.000Z] FATAL: [ingress-gateway] TLS handshake failed for domain api.prod.com: x509: certificate has expired on 2026-08-10T00:00:00Z.\n- **Metrics**: cert_days_until_expiration=0\n\n### TASK INSTRUCTION\nAnalyze TLS certificate expiration and output cert-manager renew/re-issue commands.",
     "round_1": {
         "optimist": {
@@ -51,9 +51,9 @@
         "latency": 0.0
     },
     "performance": {
-        "round1_time": 3.03,
+        "round1_time": 2.95,
         "round2_time": 0.0,
         "orchestrator_time": 0.0,
-        "total_pipeline_time": 3.03
+        "total_pipeline_time": 2.95
     }
 }

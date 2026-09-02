@@ -1,6 +1,6 @@
 # Multi-Agent Debate Execution Report: case_22_storage_corruption_nuclear
-**Timestamp:** `2026-09-02T19:49:44.224141`  
-**Total Pipeline Latency:** `2.9s`  
+**Timestamp:** `2026-09-02T20:00:44.810855`  
+**Total Pipeline Latency:** `2.94s`  
 **Consensus Score:** `0.0` (Threshold: `0.85`)  
 **Round 2 Debated:** `No (Single Pass Optimization)`  
 **Calculated Confidence Score:** `0.0`
@@ -27,10 +27,10 @@ Recommend storage volume recovery steps.
 ## 2. Performance & Timing Benchmarks
 | Pipeline Phase | Duration (seconds) |
 | :--- | :--- |
-| Round 1 Analysis | 2.9s |
+| Round 1 Analysis | 2.94s |
 | Round 2 Iterative Debate | 0.0s |
 | Orchestrator Synthesis | 0.0s |
-| **Total Execution Latency** | **2.9s** |
+| **Total Execution Latency** | **2.94s** |
 
 ## 3. Round 1: Independent Agent Analysis
 ### RECOVERY ENGINEER (Optimist) (Latency: 0.0s)

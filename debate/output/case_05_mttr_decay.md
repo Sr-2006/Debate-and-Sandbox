@@ -1,6 +1,6 @@
 # Multi-Agent Debate Execution Report: case_05_mttr_decay
-**Timestamp:** `2026-09-02T19:48:51.948368`  
-**Total Pipeline Latency:** `3.09s`  
+**Timestamp:** `2026-09-02T19:59:53.496052`  
+**Total Pipeline Latency:** `2.84s`  
 **Consensus Score:** `0.9` (Threshold: `0.85`)  
 **Round 2 Debated:** `No (Single Pass Optimization)`  
 **Calculated Confidence Score:** `90.0`
@@ -29,10 +29,10 @@ Analyze report generation delay and output remediation steps.
 ## 2. Performance & Timing Benchmarks
 | Pipeline Phase | Duration (seconds) |
 | :--- | :--- |
-| Round 1 Analysis | 3.09s |
+| Round 1 Analysis | 2.84s |
 | Round 2 Iterative Debate | 0.0s |
 | Orchestrator Synthesis | 0.0s |
-| **Total Execution Latency** | **3.09s** |
+| **Total Execution Latency** | **2.84s** |
 
 ## 3. Round 1: Independent Agent Analysis
 ### RECOVERY ENGINEER (Optimist) (Latency: 0.0s)

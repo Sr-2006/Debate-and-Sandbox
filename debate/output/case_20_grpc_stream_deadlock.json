@@ -1,6 +1,6 @@
 {
     "incident_id": "case_20_grpc_stream_deadlock",
-    "timestamp": "2026-09-02T19:49:38.236647",
+    "timestamp": "2026-09-02T20:00:39.071495",
     "problem": "### INCIDENT CONTEXT [case_20_grpc_stream_deadlock]\n- **Target Service**: `stream-gateway` | **Severity**: `HIGH`\n- **Role**: bidi-streaming-grpc\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: HTTP/2 stream flow control window exhaustion in gRPC bidirectional stream.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `ERROR [stream-gateway] rpc error: code = ResourceExhausted desc = gRPC HTTP/2 stream flow control window blocked.`\n- **Top Log Samples**:\n  - [2026-08-10T18:45:00.000Z] ERROR: [stream-gateway] gRPC stream deadlock: HTTP/2 flow control window 0 bytes available on stream 103.\n- **Metrics**: grpc_active_streams=1000, http2_flow_control_window_bytes=0\n\n### TASK INSTRUCTION\nAnalyze gRPC HTTP/2 stream flow control deadlock and output safe stream reset steps.",
     "round_1": {
         "optimist": {
@@ -51,9 +51,9 @@
         "latency": 0.0
     },
     "performance": {
-        "round1_time": 2.9,
+        "round1_time": 2.85,
         "round2_time": 0.0,
         "orchestrator_time": 0.0,
-        "total_pipeline_time": 2.9
+        "total_pipeline_time": 2.85
     }
 }
