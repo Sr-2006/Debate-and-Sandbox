@@ -233,8 +233,9 @@ def _sample_result(safety_violation: bool = False, confidence: int = 90) -> dict
 
 def test_action_envelope_shape():
     msg = build_action_proposed("payment-service_14", _sample_result(), correlation_id="corr-1", fingerprint="fp-1")
-    assert msg["event_type"] == "action.proposed"
+    assert msg["event_type"] == "autosre.action.proposed"
     assert msg["incident_id"] == "payment-service_14"
+
     assert msg["correlation_id"] == "corr-1"
     assert msg["payload"]["confidence"] == 90
     assert msg["payload"]["execution_tier"] == "TIER_1_AUTONOMOUS_EXECUTION"

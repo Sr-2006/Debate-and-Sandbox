@@ -28,7 +28,7 @@ class DockerExecutor(BaseExecutor):
 
     def _restart_container(self, target: str) -> Dict[str, Any]:
         if not self.client:
-            return {"success": True, "target": target, "tool": "container.restart", "output": "SIMULATED: Docker restart"}
+            return {"success": False, "target": target, "tool": "container.restart", "output": "ERROR: Docker daemon unavailable"}
         try:
             container = self.client.containers.get(target)
             container.restart(timeout=10)
@@ -38,10 +38,11 @@ class DockerExecutor(BaseExecutor):
 
     def _observe_container(self, target: str, action: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         if not self.client:
-            return {"success": True, "target": target, "tool": action, "output": f"SIMULATED: Observation {action}"}
+            return {"success": False, "target": target, "tool": action, "output": f"ERROR: Docker daemon unavailable for observation {action}"}
         try:
             container = self.client.containers.get(target)
             logs = container.logs(tail=parameters.get("max_lines", 50)).decode("utf-8", errors="ignore")
             return {"success": True, "target": target, "tool": action, "output": f"OBSERVED: {logs[:500]}"}
         except Exception as e:
-            return {"success": True, "target": target, "tool": action, "output": f"OBSERVED (Mocked): Container {target} active"}
+            return {"success": False, "target": target, "tool": action, "output": f"ERROR: Failed to observe container {target}: {str(e)}"}
+

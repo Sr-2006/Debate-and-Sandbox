@@ -1,0 +1,85 @@
+{
+    "schema_version": "2.0",
+    "incident_id": "payment-service_14",
+    "problem": "",
+    "payload_hash": "384281b23fa7d41c231f6fdf4fb6a2bd19421ce34986088be9740f1c72c64024",
+    "orchestrator": {
+        "technical_solution": {
+            "action_commands": [
+                "systemctl restart postgresql: {}"
+            ],
+            "confidence": 90,
+            "safety_violation": false
+        }
+    },
+    "root_cause_analysis": {
+        "summary": ""
+    },
+    "raw_v2_envelope": {
+        "schema_version": "2.0",
+        "event_id": "evt_20da27d05850",
+        "event_type": "autosre.action.proposed",
+        "incident_id": "payment-service_14",
+        "correlation_id": "f9aec8c4-b263-4f3f-9265-f96ecdeb7c21",
+        "fingerprint": "fp_payment-service_14",
+        "created_at": "2026-09-02T04:06:22.596376+00:00",
+        "source": {
+            "phase": "phase3_debate",
+            "code_commit": "2a3867c14af99d003ec8cecd044a01ef874346b8",
+            "model_name": "qwen2.5-coder"
+        },
+        "problem_summary": "",
+        "target_ref": {
+            "kind": "container",
+            "canonical_name": "database",
+            "shadow_alias": "shadow-database"
+        },
+        "phase3_confidence": {
+            "score": 0.9,
+            "uncertainty": 0.0,
+            "calibration_status": "UNCALIBRATED"
+        },
+        "execution_tier": "TIER_1_AUTONOMOUS_EXECUTION",
+        "safety_violation": false,
+        "evidence_refs": [
+            "telemetry_log"
+        ],
+        "intents": [
+            {
+                "intent_id": "int_0_fdce0d",
+                "intent_type": "systemctl restart postgresql",
+                "mode": "MUTATE_REVERSIBLE",
+                "target_ref": {
+                    "kind": "container",
+                    "canonical_name": "database"
+                },
+                "parameters": {},
+                "evidence_refs": [
+                    "telemetry_log"
+                ],
+                "preconditions": [
+                    "service_running"
+                ],
+                "postconditions": [
+                    "postcondition_passed"
+                ],
+                "timeout_seconds": 30,
+                "max_attempts": 1,
+                "risk_class": "MEDIUM",
+                "requires_human_approval": false
+            }
+        ],
+        "human_summary": "",
+        "payload": {
+            "confidence": 90,
+            "execution_tier": "TIER_1_AUTONOMOUS_EXECUTION",
+            "safety_violation": false,
+            "action_commands": [
+                "systemctl restart postgresql: {}"
+            ],
+            "consensus_rc": "PostgreSQL connection exhaustion",
+            "primary_component": "database"
+        },
+        "payload_hash": "384281b23fa7d41c231f6fdf4fb6a2bd19421ce34986088be9740f1c72c64024"
+    }
+}

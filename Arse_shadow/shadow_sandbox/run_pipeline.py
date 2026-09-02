@@ -71,13 +71,34 @@ def process_incident(incident_file: str, settle_wait_s: float = 1.0) -> Optional
     target = fault_agent.extract_target_service(problem_text)
     primitive, params = fault_agent.infer_fault_primitive(problem_text, "", target)
 
+    fault_setup_ok = True
+    fault_error_msg = ""
     if primitive:
         try:
             recover_all(target)
             before_state = fault_agent.execute_fault_primitive(target, primitive, params)
             log_fault_event(incident_id, primitive, target, params, before_state, active=True)
         except Exception as e:
-            print(f"[ORCHESTRATOR] [{incident_id}] Fault setup notice: {e}")
+            fault_setup_ok = False
+            fault_error_msg = f"Fault setup failed for primitive '{primitive}': {str(e)}"
+            print(f"[ORCHESTRATOR] [{incident_id}] {fault_error_msg}")
+
+    if not fault_setup_ok:
+        sm.transition_to("FAULT_SETUP_FAILED", ReasonCode.FAULT_SETUP_FAILED, fault_error_msg)
+        summary = sm.get_summary()
+        outcome = {
+            "incident_id": incident_id,
+            "run_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "gate_decision": "FAULT_SETUP_FAILED",
+            "confidence_score": 0.0,
+            "human_intervention_required": True,
+            "message": fault_error_msg,
+            "agent_proposal": proposal,
+            "execution_result": None,
+            "fault_cleared": False,
+            "state_machine_history": summary["history"]
+        }
+        return generate_report(outcome)
 
     # 4. Run Execution Harness
     harness = ExecutionHarness(agent=remediation_agent, persistence=persistence)
@@ -89,6 +110,7 @@ def process_incident(incident_file: str, settle_wait_s: float = 1.0) -> Optional
             recover_all(target)
         except Exception as e:
             pass
+
 
     # 5. Write Report
     summary = sm.get_summary()

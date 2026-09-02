@@ -72,7 +72,7 @@ def build_action_proposed(
     correlation_id: str | None = None,
     fingerprint: str | None = None,
 ) -> dict:
-    """Convert DebateManager result into v2 envelope dict format with legacy compatibility."""
+    """Convert DebateManager result into v2 envelope dict format with validation."""
     solution = result.get("solution", {}) if isinstance(result, dict) else {}
     if not solution and "orchestrator" in result:
         solution = result["orchestrator"].get("technical_solution", {})
@@ -96,73 +96,78 @@ def build_action_proposed(
 
     problem_text = result.get("problem", "")
     target_name = solution.get("primary_component", "unknown-service")
+    evidence_anchors = solution.get("evidence_refs") or result.get("evidence_refs") or ["telemetry_log"]
     
-    raw_cmds = solution.get("action_commands", [])
-    if not isinstance(raw_cmds, list):
-        raw_cmds = [str(raw_cmds)] if raw_cmds else []
-
+    intents_raw = solution.get("intents", [])
     intents: List[Intent] = []
-    if not raw_cmds:
-        intents.append(Intent(
-            intent_id=f"int_{uuid.uuid4().hex[:8]}",
-            intent_type="observe.logs.search",
-            mode="OBSERVE",
-            target_ref=TargetRef(kind="container", canonical_name=target_name),
-            parameters={"query": "error"},
-            evidence_refs=["log_01"],
-            preconditions=[],
-            postconditions=["logs_retrieved"],
-            timeout_seconds=30,
-            max_attempts=1,
-            risk_class="LOW",
-            requires_human_approval=False
-        ))
-    else:
-        for idx, cmd in enumerate(raw_cmds):
-            intent_type = "container.restart"
-            mode = "MUTATE_REVERSIBLE"
-            params: Dict[str, Any] = {}
-            
-            cmd_str = str(cmd).lower()
-            if "lock_timeout" in cmd_str or "statement_timeout" in cmd_str:
-                intent_type = "postgres.setting.update"
-                params = {"setting_name": "lock_timeout", "value": "5000ms"}
-            elif "max_connections" in cmd_str or "postgres" in cmd_str:
-                intent_type = "postgres.setting.update"
-                params = {"setting_name": "max_connections", "value": 200}
-            elif "eviction" in cmd_str or "redis" in cmd_str:
-                intent_type = "redis.eviction_policy.update"
-                params = {"policy": "volatile-lru"}
-            elif "scale" in cmd_str or "replicas" in cmd_str:
-                intent_type = "workload.replicas.scale"
-                params = {"replicas": 3}
-            elif "cpu" in cmd_str or "memory" in cmd_str or "throttle" in cmd_str:
-                intent_type = "workload.resources.patch"
-                params = {"resource_type": "cpu", "limit_value": "2.0"}
-            elif "cert" in cmd_str or "tls" in cmd_str:
-                intent_type = "tls.certificate.renew"
-                params = {"secret_name": "tls-secret", "domain": "api.example.com"}
-            elif "cilium" in cmd_str:
-                intent_type = "cilium.policy.reload"
-                params = {"policy_name": "ingress-policy"}
-            elif "ceph" in cmd_str or "storage" in cmd_str:
-                intent_type = "ceph.health.inspect"
-                mode = "OBSERVE"
 
+    if intents_raw and isinstance(intents_raw, list):
+        for idx, item in enumerate(intents_raw):
+            if isinstance(item, dict):
+                intents.append(Intent(
+                    intent_id=item.get("intent_id", f"int_{idx}_{uuid.uuid4().hex[:6]}"),
+                    intent_type=item.get("intent_type", "container.restart"),
+                    mode=item.get("mode", "MUTATE_REVERSIBLE"),
+                    target_ref=TargetRef(kind="container", canonical_name=target_name),
+                    parameters=item.get("parameters", {}),
+                    evidence_refs=item.get("evidence_refs", evidence_anchors),
+                    preconditions=item.get("preconditions", ["service_running"]),
+                    postconditions=item.get("postconditions", ["postcondition_passed"]),
+                    timeout_seconds=item.get("timeout_seconds", 30),
+                    max_attempts=item.get("max_attempts", 1),
+                    risk_class=item.get("risk_class", "MEDIUM"),
+                    requires_human_approval=item.get("requires_human_approval", safety_violation)
+                ))
+    
+    if not intents:
+        raw_cmds = solution.get("action_commands", [])
+        if not isinstance(raw_cmds, list):
+            raw_cmds = [str(raw_cmds)] if raw_cmds else []
+
+        if not raw_cmds:
             intents.append(Intent(
-                intent_id=f"int_{idx}_{uuid.uuid4().hex[:6]}",
-                intent_type=intent_type,
-                mode=mode,
+                intent_id=f"int_{uuid.uuid4().hex[:8]}",
+                intent_type="observe.logs.search",
+                mode="OBSERVE",
                 target_ref=TargetRef(kind="container", canonical_name=target_name),
-                parameters=params,
-                evidence_refs=["log_01"],
-                preconditions=["service_running"],
-                postconditions=["postcondition_passed"],
+                parameters={"query": "error"},
+                evidence_refs=evidence_anchors,
+                preconditions=[],
+                postconditions=["logs_retrieved"],
                 timeout_seconds=30,
                 max_attempts=1,
-                risk_class="MEDIUM" if mode != "OBSERVE" else "LOW",
-                requires_human_approval=safety_violation
+                risk_class="LOW",
+                requires_human_approval=False
             ))
+        else:
+            for idx, cmd in enumerate(raw_cmds):
+                first_cmd = str(cmd).strip()
+                intent_type = first_cmd
+                params: Dict[str, Any] = {}
+                if ":" in first_cmd and ("{" in first_cmd or "}" in first_cmd or "'" in first_cmd or '"' in first_cmd):
+                    parts = first_cmd.split(":", 1)
+                    intent_type = parts[0].strip()
+                    param_str = parts[1].strip().replace("'", '"')
+                    try:
+                        params = json.loads(param_str)
+                    except Exception:
+                        params = {}
+
+                mode = "OBSERVE" if intent_type.startswith("observe") or "inspect" in intent_type else "MUTATE_REVERSIBLE"
+                intents.append(Intent(
+                    intent_id=f"int_{idx}_{uuid.uuid4().hex[:6]}",
+                    intent_type=intent_type,
+                    mode=mode,
+                    target_ref=TargetRef(kind="container", canonical_name=target_name),
+                    parameters=params,
+                    evidence_refs=evidence_anchors,
+                    preconditions=["service_running"],
+                    postconditions=["postcondition_passed"],
+                    timeout_seconds=30,
+                    max_attempts=1,
+                    risk_class="MEDIUM" if mode != "OBSERVE" else "LOW",
+                    requires_human_approval=safety_violation
+                ))
 
     env = ActionProposedV2Envelope.create_default(
         incident_id=incident_id,
@@ -170,13 +175,14 @@ def build_action_proposed(
         target_name=target_name,
         intents=intents,
         confidence=conf_float,
-        correlation_id=correlation_id
+        correlation_id=correlation_id,
+        evidence_refs=evidence_anchors
     )
 
     dict_repr = {
         "schema_version": env.schema_version,
         "event_id": env.event_id,
-        "event_type": "action.proposed",
+        "event_type": "autosre.action.proposed",
         "incident_id": incident_id,
         "correlation_id": env.correlation_id,
         "fingerprint": fingerprint or env.fingerprint,
@@ -225,13 +231,19 @@ def build_action_proposed(
             "confidence": conf_int,
             "execution_tier": execution_tier,
             "safety_violation": safety_violation,
-            "action_commands": raw_cmds,
+            "action_commands": [f"{i.intent_type}: {i.parameters}" for i in env.intents],
             "consensus_rc": solution.get("consensus_rc", solution.get("final_rca", "")),
             "primary_component": target_name
         }
     }
 
     dict_repr["payload_hash"] = compute_payload_hash(dict_repr)
+    
+    # Enforce schema validation before returning/publishing
+    is_valid, errors, reason_code = validate_envelope(dict_repr)
+    if not is_valid:
+        raise ValueError(f"Envelope validation failed ({reason_code.value}): {errors}")
+
     return dict_repr
 
 
@@ -276,14 +288,11 @@ class ActionPublisher:
         return {"transport": "file", "ok": True, "detail": f"{detail} -> {path}"}
 
     def publish(self, message: dict, offline_dir: str | None = None) -> dict:
-        """Single delivery publish strategy."""
-        # 1. ALWAYS Trigger the Sandbox Drop
-        try:
-            self.publish_to_sandbox(message)
-        except Exception as e:
-            print(f"[ACTION_PUBLISHER] Failed to drop to sandbox: {e}")
+        """Single delivery publish strategy: delivers to ONE transport target."""
+        if offline_dir:
+            return self._write_offline(message, offline_dir, "offline mode")
 
-        # 2. RabbitMQ live publish if available
+        # 1. RabbitMQ live publish if available
         body = canonicalize_json(message)
         try:
             import pika  # type: ignore
@@ -302,5 +311,11 @@ class ActionPublisher:
         except (ImportError, Exception):
             pass
 
-        # 3. File fallback
+        # 2. Direct Sandbox delivery if available
+        try:
+            return self.publish_to_sandbox(message)
+        except Exception:
+            pass
+
+        # 3. File fallback single delivery
         return self._write_offline(message, offline_dir, "offline mode")

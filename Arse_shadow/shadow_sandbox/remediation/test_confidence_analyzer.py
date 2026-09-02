@@ -11,8 +11,12 @@ import json
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
+from contracts.reason_codes import ReasonCode
 
-from shadow_sandbox.remediation.confidence_analyzer import calculate_confidence
+
+from shadow_sandbox.remediation.confidence_analyzer import ConfidenceAnalyzer, calculate_confidence
+
 from shadow_sandbox.remediation.execution_harness import ExecutionHarness
 from shadow_sandbox.reports.report_generator import generate_report
 
@@ -21,72 +25,28 @@ class TestConfidenceAnalyzer(unittest.TestCase):
 
     def setUp(self):
         self.test_dir = tempfile.mkdtemp()
-        self.history_file = os.path.join(self.test_dir, "chaos_history.json")
 
     def tearDown(self):
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
-    def test_base_score_missing_history(self):
-        """Base score starts at 1.0. Missing history defaults multiplier to 0.85 -> score 0.85."""
-        proposal = {"target": "shadow-auth-service", "tool": "scale_replicas"}
-        score = calculate_confidence(proposal, history_path=os.path.join(self.test_dir, "non_existent.json"))
-        self.assertEqual(score, 0.85)
+    def test_missing_history_returns_insufficient_history(self):
+        """When history sample count < 20, reason_code is INSUFFICIENT_HISTORY."""
+        analyzer = ConfidenceAnalyzer()
+        res = analyzer.calculate_confidence("postgres.setting.update", "container")
+        self.assertFalse(res["has_sufficient_history"])
+        self.assertEqual(res["reason_code"], "INSUFFICIENT_HISTORY")
 
-    def test_target_penalty_postgres(self):
-        """Subtract 0.15 for postgres target. (1.0 - 0.15) * 0.85 = 0.7225 -> 0.72."""
-        proposal = {"target": "shadow-postgres-db", "tool": "scale_replicas"}
-        score = calculate_confidence(proposal, history_path=os.path.join(self.test_dir, "non_existent.json"))
-        self.assertEqual(score, 0.72)
-
-    def test_target_penalty_redis(self):
-        """Subtract 0.15 for redis target. (1.0 - 0.15) * 0.85 = 0.7225 -> 0.72."""
-        proposal = {"target": "shadow-redis", "tool": "scale_replicas"}
-        score = calculate_confidence(proposal, history_path=os.path.join(self.test_dir, "non_existent.json"))
-        self.assertEqual(score, 0.72)
-
-    def test_tool_penalty_run_query(self):
-        """Subtract 0.10 for run_query tool. (1.0 - 0.10) * 0.85 = 0.765 -> 0.77."""
-        proposal = {"target": "shadow-auth-service", "tool": "run_query"}
-        score = calculate_confidence(proposal, history_path=os.path.join(self.test_dir, "non_existent.json"))
-        self.assertEqual(score, 0.77)
-
-    def test_tool_penalty_restart_container(self):
-        """Subtract 0.10 for restart_container tool. (1.0 - 0.10) * 0.85 = 0.765 -> 0.77."""
-        proposal = {"target": "shadow-auth-service", "tool": "restart_container"}
-        score = calculate_confidence(proposal, history_path=os.path.join(self.test_dir, "non_existent.json"))
-        self.assertEqual(score, 0.77)
-
-    def test_combined_penalties_low_confidence(self):
-        """postgres (-0.15) + run_query (-0.10) -> (1.0 - 0.25) * 0.85 = 0.6375 -> 0.64."""
-        proposal = {"target": "shadow-postgres-db", "tool": "run_query"}
-        score = calculate_confidence(proposal, history_path=os.path.join(self.test_dir, "non_existent.json"))
-        self.assertEqual(score, 0.64)
-
-    def test_custom_history_multiplier(self):
-        """With tool success rate of 1.0 from history, (1.0 - 0.15) * 1.0 = 0.85."""
-        history = [
-            {"fault_name": "run_query", "status": "recovered"},
-            {"fault_name": "run_query", "status": "recovered"}
-        ]
-        with open(self.history_file, "w", encoding="utf-8") as f:
-            json.dump(history, f)
-
-        proposal = {"target": "shadow-postgres-db", "tool": "run_query"}
-        # postgres (-0.15) + run_query (-0.10) -> 0.75 * 1.0 = 0.75
-        score = calculate_confidence(proposal, history_path=self.history_file)
-        self.assertEqual(score, 0.75)
-
-    def test_harness_blocks_low_confidence(self):
-        """ExecutionHarness halts execution when confidence score < 0.70."""
-        # Create a mock fix JSON that proposes a run_query on shadow-postgres-db
+    @patch("shadow_sandbox.remediation.execution_harness.attest_shadow_environment", return_value=(True, ReasonCode.DIAGNOSED, "OK"))
+    def test_harness_blocks_insufficient_history(self, mock_attest):
+        """ExecutionHarness halts execution when history is insufficient (< 20 samples)."""
         fix_json_path = os.path.join(self.test_dir, "fix_pg.json")
         fix_content = {
-            "incident_id": "test_low_confidence_incident",
-            "problem": "Postgres connection pool exhausted",
+            "incident_id": "test_insufficient_history_incident",
+            "problem": "Target Service: `postgres-db`. Postgres connection pool exhausted",
             "orchestrator": {
                 "technical_solution": {
                     "safety_violation": False,
-                    "action_commands": ["ALTER SYSTEM SET max_connections = 200;"],
+                    "action_commands": ["postgres.setting.update: {\"setting_name\": \"max_connections\", \"value\": \"200\"}"],
                     "confidence": 0.8
                 }
             }
@@ -94,16 +54,13 @@ class TestConfidenceAnalyzer(unittest.TestCase):
         with open(fix_json_path, "w", encoding="utf-8") as f:
             json.dump(fix_content, f)
 
-        # Harness with no history file -> score is 0.64 (< 0.70)
-        harness = ExecutionHarness(settle_wait_s=0.1, history_path=os.path.join(self.test_dir, "non_existent.json"))
+        harness = ExecutionHarness(settle_wait_s=0.1)
         res = harness.run(fix_json_path)
 
-        self.assertEqual(res["gate_decision"], "BLOCKED_LOW_CONFIDENCE")
-        self.assertEqual(res["confidence_score"], 0.64)
+        self.assertEqual(res["gate_decision"], "INSUFFICIENT_HISTORY")
         self.assertTrue(res["human_intervention_required"])
-        self.assertIn("0.64", res["message"])
-        self.assertIn("below the 0.70 safety threshold", res["message"])
-        self.assertIsNone(res["execution_result"])
+        self.assertIn("INSUFFICIENT_HISTORY", res["gate_decision"])
+
 
     def test_report_generator_exposes_confidence_and_blocked(self):
         """Report generator includes root level confidence_score and sets human_intervention_required=True for BLOCKED."""
@@ -130,3 +87,4 @@ class TestConfidenceAnalyzer(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

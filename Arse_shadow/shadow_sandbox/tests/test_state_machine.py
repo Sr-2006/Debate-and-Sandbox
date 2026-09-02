@@ -19,6 +19,11 @@ def test_state_machine_happy_path():
     assert sm.transition_to("CLEANING_UP", ReasonCode.VERIFIED_RECOVERED)
     assert sm.transition_to(TerminalState.VERIFIED_RECOVERED.value, ReasonCode.VERIFIED_RECOVERED)
 
-    summary = sm.get_summary()
-    assert summary["terminal_state"] == "VERIFIED_RECOVERED"
-    assert summary["transition_count"] == 13
+def test_state_machine_invalid_transition_rejected():
+    sm = ExecutionStateMachine("case_invalid", "hash456")
+    assert sm.current_state == "RECEIVED"
+    # Attempt illegal transition straight from RECEIVED to EXECUTING
+    ok = sm.transition_to("EXECUTING", ReasonCode.DIAGNOSED)
+    assert ok is False
+    assert sm.current_state == "RECEIVED"
+

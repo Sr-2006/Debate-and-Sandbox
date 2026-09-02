@@ -64,22 +64,10 @@ class ConfidenceAnalyzer:
 
 
 def calculate_confidence(proposal: Dict[str, Any], history_path: Optional[str] = None) -> float:
-    """Legacy helper function returning float score for legacy test compatibility."""
-    target = proposal.get("target", "") if isinstance(proposal, dict) else ""
+    """Evaluates execution confidence using ConfidenceAnalyzer Beta posterior lower bound."""
     tool = proposal.get("tool", "") if isinstance(proposal, dict) else ""
+    target_kind = "container"
+    analyzer = ConfidenceAnalyzer()
+    res = analyzer.calculate_confidence(tool, target_kind=target_kind)
+    return res["execution_confidence"]
 
-    target_penalty = 0.15 if ("postgres" in target or "redis" in target) else 0.0
-    tool_penalty = 0.10 if any(kw in tool for kw in ["query", "restart", "setting", "postgres"]) else 0.0
-
-    mult = 0.85
-    if history_path and os.path.exists(history_path):
-        try:
-            with open(history_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if data and isinstance(data, list):
-                    mult = 1.0
-        except Exception:
-            pass
-
-    score = (1.0 - target_penalty - tool_penalty) * mult
-    return round(score, 2)

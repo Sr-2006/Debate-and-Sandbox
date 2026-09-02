@@ -13,14 +13,20 @@ class PostgresVerifier(BaseVerifier):
 
         if action == "postgres.setting.update":
             setting = parameters.get("setting_name")
-            expected = str(parameters.get("value"))
+            expected = str(parameters.get("value", "")).strip()
             cmd = ["docker", "exec", shadow_target, "psql", "-U", "postgres", "-t", "-c", f"SHOW {setting};"]
             try:
                 res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                if res.returncode != 0:
+                    return {"passed": False, "target": shadow_target, "verifier": "PostgresVerifier", "reason": f"ERROR: psql SHOW {setting} failed: {res.stderr.strip()}"}
                 val = res.stdout.strip()
-                passed = expected in val or val in expected or bool(val)
-                return {"passed": passed, "target": shadow_target, "verifier": "PostgresVerifier", "reason": f"Setting {setting} verified: {val}"}
-            except Exception:
-                return {"passed": True, "target": shadow_target, "verifier": "PostgresVerifier", "reason": f"SIMULATED: Postgres setting {setting} verified"}
+                passed = (val == expected or expected.lower() in val.lower())
+                return {"passed": passed, "target": shadow_target, "verifier": "PostgresVerifier", "reason": f"Setting {setting} verified: '{val}' (expected '{expected}')"}
+            except Exception as e:
+                return {"passed": False, "target": shadow_target, "verifier": "PostgresVerifier", "reason": f"ERROR: Postgres verification exception: {str(e)}"}
 
-        return {"passed": True, "target": shadow_target, "verifier": "PostgresVerifier", "reason": "Postgres verification passed"}
+        elif action in ["postgres.lock.diagnose", "postgres.wal.diagnose"]:
+            return {"passed": True, "target": shadow_target, "verifier": "PostgresVerifier", "reason": f"Diagnostics completed: {execution_result.get('output')}"}
+
+        return {"passed": True, "target": shadow_target, "verifier": "PostgresVerifier", "reason": "Postgres verification completed"}
+

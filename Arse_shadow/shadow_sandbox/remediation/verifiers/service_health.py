@@ -18,11 +18,12 @@ class ServiceHealthVerifier(BaseVerifier):
             return {"passed": False, "target": shadow_target, "verifier": "ServiceHealthVerifier", "reason": "Execution failed before verification"}
 
         if not self.client:
-            return {"passed": True, "target": shadow_target, "verifier": "ServiceHealthVerifier", "reason": "SIMULATED: Health check passed"}
+            return {"passed": False, "target": shadow_target, "verifier": "ServiceHealthVerifier", "reason": "ERROR: Docker daemon unavailable for health check"}
 
         try:
             container = self.client.containers.get(shadow_target)
             is_running = container.status == "running"
             return {"passed": is_running, "target": shadow_target, "verifier": "ServiceHealthVerifier", "reason": f"Container status: {container.status}"}
         except Exception as e:
-            return {"passed": True, "target": shadow_target, "verifier": "ServiceHealthVerifier", "reason": f"SIMULATED: Health check pass ({e})"}
+            return {"passed": False, "target": shadow_target, "verifier": "ServiceHealthVerifier", "reason": f"ERROR: Service health check failed: {str(e)}"}
+

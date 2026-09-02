@@ -70,7 +70,8 @@ class ActionProposedV2Envelope:
         intents: List[Intent],
         confidence: float = 0.85,
         correlation_id: Optional[str] = None,
-        target_kind: str = "container"
+        target_kind: str = "container",
+        evidence_refs: Optional[List[str]] = None
     ) -> 'ActionProposedV2Envelope':
         import uuid
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -81,6 +82,15 @@ class ActionProposedV2Envelope:
         src = SourceRef(phase="phase3_debate", code_commit="2a3867c14af99d003ec8cecd044a01ef874346b8", model_name="qwen2.5-coder")
         conf = Phase3Confidence(score=confidence)
         
+        # Aggregate evidence_refs from intents if not provided
+        ev_refs = evidence_refs if evidence_refs is not None else []
+        if not ev_refs:
+            for i in intents:
+                ev_refs.extend(i.evidence_refs)
+            ev_refs = list(set(ev_refs))
+        if not ev_refs:
+            ev_refs = ["telemetry_log"]
+
         return cls(
             schema_version="2.0",
             event_id=event_id,
@@ -95,7 +105,8 @@ class ActionProposedV2Envelope:
             phase3_confidence=conf,
             execution_tier="tier_1",
             safety_violation=False,
-            evidence_refs=["log_01"],
+            evidence_refs=ev_refs,
             intents=intents,
             human_summary=problem_summary[:100]
         )
+

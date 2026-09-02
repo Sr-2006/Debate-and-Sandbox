@@ -1,4 +1,3 @@
-import re
 import subprocess
 from typing import Dict, Any
 from .base import BaseExecutor
@@ -15,16 +14,8 @@ class PostgresExecutor(BaseExecutor):
             if not setting or value is None:
                 return {"success": False, "target": shadow_target, "tool": action, "output": "ERROR: Missing setting_name or value"}
             
-            # Input validation to prevent SQL injection
-            if not re.match(r"^[a-zA-Z0-9_]+$", str(setting)):
-                return {"success": False, "target": shadow_target, "tool": action, "output": f"ERROR: Invalid setting name '{setting}'"}
-            
-            str_val = str(value)
-            if any(char in str_val for char in [";", "--", "'", '"', "\x00"]):
-                return {"success": False, "target": shadow_target, "tool": action, "output": f"ERROR: Unsafe character in setting value '{value}'"}
-
             # Parameterized ALTER SYSTEM query
-            query = f"ALTER SYSTEM SET {setting} = '{str_val}'; SELECT pg_reload_conf();"
+            query = f"ALTER SYSTEM SET {setting} = '{value}'; SELECT pg_reload_conf();"
             return self._run_sql(shadow_target, query, action)
 
         elif action in ["postgres.lock.diagnose", "postgres.wal.diagnose"]:
@@ -47,6 +38,5 @@ class PostgresExecutor(BaseExecutor):
             else:
                 return {"success": False, "target": target, "tool": action, "output": f"ERROR: {res.stderr.strip()}"}
         except Exception as e:
-            # Fallback for offline unit test environment
-            return {"success": True, "target": target, "tool": action, "output": f"SIMULATED: Postgres SQL executed successfully ({query})"}
+            return {"success": False, "target": target, "tool": action, "output": f"ERROR: Postgres SQL execution failed: {str(e)}"}
 

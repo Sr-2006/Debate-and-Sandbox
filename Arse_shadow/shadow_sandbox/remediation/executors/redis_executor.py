@@ -17,7 +17,8 @@ class RedisExecutor(BaseExecutor):
                     return {"success": True, "target": shadow_target, "tool": action, "output": f"SUCCESS: maxmemory-policy set to {policy}"}
                 else:
                     return {"success": False, "target": shadow_target, "tool": action, "output": f"ERROR: {res.stderr.strip()}"}
-            except Exception:
-                return {"success": True, "target": shadow_target, "tool": action, "output": f"SIMULATED: Redis maxmemory-policy set to {policy}"}
+            except Exception as e:
+                return {"success": False, "target": shadow_target, "tool": action, "output": f"ERROR: Redis command failed: {str(e)}"}
+
 
         return {"success": False, "target": shadow_target, "tool": action, "output": f"ERROR: Unknown action {action}"}

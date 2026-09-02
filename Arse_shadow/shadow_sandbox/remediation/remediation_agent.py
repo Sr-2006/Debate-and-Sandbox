@@ -67,7 +67,7 @@ class BoundedRemediationAgent:
         return raw_target
 
     def propose_action(self, problem_text: str, action_commands: List[str]) -> Dict[str, Any]:
-        """Translates problem description and action commands into a typed executor proposal."""
+        """Translates problem description and action commands into a typed executor proposal using capabilities.yaml."""
         if not action_commands:
             return {
                 "tool": None,
@@ -76,60 +76,42 @@ class BoundedRemediationAgent:
             }
 
         target = self.extract_target_service(problem_text)
-        commands_str = " ".join(action_commands).lower()
-        combined_text = f"{problem_text} {commands_str}".lower()
+        first_cmd = str(action_commands[0]).strip()
 
-        if any(kw in combined_text for kw in ["lock_timeout", "statement_timeout", "max_connections", "alter system"]):
-            intent_type = "postgres.setting.update"
-            executor_name = "postgres_executor"
-            verifier_name = "postgres_verifier"
-            params = {"setting_name": "max_connections", "value": 200}
-        elif "eviction" in combined_text or "redis" in combined_text:
-            intent_type = "redis.eviction_policy.update"
-            executor_name = "redis_executor"
-            verifier_name = "redis_verifier"
-            params = {"policy": "volatile-lru"}
-        elif "scale" in combined_text or "replicas" in combined_text:
-            intent_type = "workload.replicas.scale"
-            executor_name = "kubernetes_executor"
-            verifier_name = "kubernetes_verifier"
-            params = {"replicas": 3}
-        elif "cpu" in combined_text or "memory" in combined_text or "throttle" in combined_text:
-            intent_type = "workload.resources.patch"
-            executor_name = "kubernetes_executor"
-            verifier_name = "kubernetes_verifier"
-            params = {"resource_type": "cpu", "limit_value": "2.0"}
-        elif "cert" in combined_text or "tls" in combined_text:
-            intent_type = "tls.certificate.renew"
-            executor_name = "cert_manager_executor"
-            verifier_name = "tls_verifier"
-            params = {"secret_name": "tls-secret", "domain": "api.example.com"}
-        elif "cilium" in combined_text or "bpf" in combined_text:
-            intent_type = "cilium.policy.reload"
-            executor_name = "cilium_executor"
-            verifier_name = "network_verifier"
-            params = {"policy_name": "ingress-policy"}
-        elif "ceph" in combined_text or "storage" in combined_text:
-            intent_type = "ceph.health.inspect"
-            executor_name = "ceph_executor"
-            verifier_name = "storage_verifier"
-            params = {}
-        elif "drain" in combined_text or "cordon" in combined_text:
-            intent_type = "node.cordon"
-            executor_name = "kubernetes_executor"
-            verifier_name = "kubernetes_verifier"
-            params = {"node_name": target}
-        else:
-            intent_type = "container.restart"
-            executor_name = "docker_executor"
-            verifier_name = "service_health"
-            params = {}
+        # Parse intent_type and parameters if provided as "intent_type: {json_params}" or raw intent_type
+        intent_type = first_cmd
+        params = {}
+        if ":" in first_cmd and ("{" in first_cmd or "}" in first_cmd or "'" in first_cmd or '"' in first_cmd):
+            parts = first_cmd.split(":", 1)
+            intent_type = parts[0].strip()
+            param_str = parts[1].strip().replace("'", '"')
+            try:
+                params = json.loads(param_str)
+            except Exception:
+                params = {}
 
+        capabilities = self.policy_engine.capabilities
+        if intent_type in capabilities:
+            cap_def = capabilities[intent_type]
+            executor_name = cap_def.get("executor", "docker_executor")
+            verifier_name = cap_def.get("verifier", "service_health")
+            return {
+                "tool": intent_type,
+                "executor_name": executor_name,
+                "verifier_name": verifier_name,
+                "target": target,
+                "parameters": params,
+                "unmapped": False,
+                "reasoning": f"Resolved catalog operation {intent_type}"
+            }
+
+        # Fail closed for unknown or unregistered intents
         return {
             "tool": intent_type,
-            "executor_name": executor_name,
-            "verifier_name": verifier_name,
+            "executor_name": None,
+            "verifier_name": None,
             "target": target,
             "parameters": params,
-            "reasoning": f"Mapped '{commands_str}' to catalog operation {intent_type}"
+            "unmapped": True,
+            "reason": f"Unknown capability '{intent_type}' not found in catalog"
         }

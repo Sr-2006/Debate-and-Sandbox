@@ -31,20 +31,23 @@ class ExecutionStateMachine:
 
     def transition_to(self, new_state: str, reason_code: ReasonCode, message: str = "") -> bool:
         """Transitions state machine to new_state if transition is allowed."""
-        allowed = VALID_TRANSITIONS.get(self.current_state, [])
-        # Terminal states check
-        if self.current_state in [ts.value for ts in TerminalState]:
+        terminal_values = [ts.value for ts in TerminalState]
+        
+        # Cannot transition out of a terminal state
+        if self.current_state in terminal_values:
             return False
 
-        if new_state not in allowed and new_state not in [ts.value for ts in TerminalState]:
-            # Force transition for explicit terminal failure states
-            pass
+        allowed = VALID_TRANSITIONS.get(self.current_state, [])
+        if new_state not in allowed and new_state not in terminal_values:
+            # Invalid transition requested
+            return False
 
         old_state = self.current_state
         self.current_state = new_state
         self.reason_code = reason_code
         self._record_transition(new_state, reason_code, message)
         return True
+
 
     def _record_transition(self, state: str, reason_code: ReasonCode, message: str):
         self.history.append({
