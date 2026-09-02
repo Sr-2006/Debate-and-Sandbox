@@ -75,9 +75,9 @@
     },
     "phase3_confidence": {
       "type": "object",
-      "required": ["score"],
       "properties": {
-        "score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "score": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+
         "uncertainty": { "type": "number" },
         "calibration_status": { "type": "string", "enum": ["UNCALIBRATED", "CALIBRATED"] },
         "calibration_version": { "type": "string" }

@@ -100,7 +100,12 @@ def validate_envelope(payload: Dict[str, Any]) -> Tuple[bool, List[str], ReasonC
             return False, [f"Intent index {idx} specifies unmapped capability '{intent_type}'"], ReasonCode.BLOCKED_UNKNOWN_CAPABILITY
 
         cap_meta = capabilities[intent_type]
+        cat_mode = cap_meta.get("mode")
+        if cat_mode and mode != cat_mode:
+            return False, [f"Intent index {idx} mode '{mode}' does not match catalog authoritative mode '{cat_mode}' for capability '{intent_type}'"], ReasonCode.BLOCKED_INVALID_PARAMETERS
+
         supported_targets = cap_meta.get("supported_targets", [])
+
         if target_kind and target_kind not in supported_targets:
             return False, [f"Intent index {idx} target kind '{target_kind}' not in supported targets {supported_targets} for capability '{intent_type}'"], ReasonCode.BLOCKED_TARGET_UNRESOLVED
 

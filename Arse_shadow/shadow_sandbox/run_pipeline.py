@@ -118,12 +118,14 @@ def process_incident(incident_file: str, settle_wait_s: float = 1.0) -> Optional
         "target_ref": target_ref,
         "parameters": first_intent.get("parameters", {}),
         "evidence_refs": first_intent.get("evidence_refs", []),
-        "requires_human_approval": first_intent.get("requires_human_approval", v2_envelope.get("safety_violation", False)),
+        "requires_human_approval": first_intent.get("requires_human_approval", False),
+        "envelope_safety_violation": bool(v2_envelope.get("safety_violation", False) or incident.get("safety_violation", False)),
         "qualification_run": incident.get("qualification_run") or v2_envelope.get("qualification_run"),
         "executor_name": first_intent.get("executor_name") or cap_meta.get("executor"),
         "verifier_name": first_intent.get("verifier_name") or cap_meta.get("verifier"),
-        "confidence": v2_envelope.get("phase3_confidence", {}).get("score", 0.85) if isinstance(v2_envelope.get("phase3_confidence"), dict) else 0.85
+        "confidence": v2_envelope.get("phase3_confidence", {}).get("score") if isinstance(v2_envelope.get("phase3_confidence"), dict) else None
     }
+
 
     remediation_agent = BoundedRemediationAgent()
 
@@ -204,13 +206,16 @@ def process_incident(incident_file: str, settle_wait_s: float = 1.0) -> Optional
                 cleanup_ok = False
                 cleanup_msg = f"Cleanup failed for target '{shadow_target}': {str(e)}"
 
-    # 6. Write Final Outcome Report
+    # 6. Final State Transition & Outcome Report
+    curr_state = sm.get_summary()["terminal_state"]
+    if curr_state == "CLEANING_UP":
+        if cleanup_ok:
+            sm.transition_to("VERIFIED_RECOVERED", ReasonCode.VERIFIED_RECOVERED, "Fault cleanup completed successfully")
+        else:
+            sm.transition_to("CLEANUP_FAILED", ReasonCode.CLEANUP_FAILED, cleanup_msg)
+
     summary = sm.get_summary()
     gate_decision = summary["terminal_state"]
-
-    if not cleanup_ok and gate_decision == "VERIFIED_RECOVERED":
-        gate_decision = "CLEANUP_FAILED"
-        sm.transition_to("CLEANUP_FAILED", ReasonCode.CLEANUP_FAILED, cleanup_msg)
 
     outcome = {
         "incident_id": incident_id,
@@ -224,6 +229,7 @@ def process_incident(incident_file: str, settle_wait_s: float = 1.0) -> Optional
         "fault_cleared": exec_res.get("fault_cleared", False) and cleanup_ok,
         "state_machine_history": sm.get_summary()["history"]
     }
+
 
     report_path = generate_report(outcome)
     print(f"[ORCHESTRATOR] [{incident_id}] Processed ({gate_decision}). Report: {report_path}")

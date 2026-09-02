@@ -33,9 +33,15 @@ class PolicyEngine:
         if supported_targets and not is_target_supported(supported_targets, target_kind):
             return False, ReasonCode.BLOCKED_TARGET_UNRESOLVED, f"Target kind '{target_kind}' not supported for capability '{intent_type}'"
 
-        # Check human approval requirement
-        if cap_def.get("requires_human_approval", False) or intent.get("requires_human_approval", False):
-            return False, ReasonCode.REQUIRES_HUMAN_APPROVAL, f"Capability '{intent_type}' is high-risk and requires human approval"
+        # Check human approval requirement across envelope, intent, and catalog
+        requires_approval = bool(
+            cap_def.get("requires_human_approval", False)
+            or intent.get("requires_human_approval", False)
+            or intent.get("envelope_safety_violation", False)
+        )
+        if requires_approval:
+            return False, ReasonCode.REQUIRES_HUMAN_APPROVAL, f"Capability '{intent_type}' is high-risk or flagged as safety violation and requires human approval"
+
 
         return True, ReasonCode.DIAGNOSED, "Policy check passed"
 

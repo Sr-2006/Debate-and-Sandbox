@@ -242,7 +242,7 @@ class ExecutionHarness:
         executor = self.agent.executors[executor_name]
         verifier = self.agent.verifiers[verifier_name]
 
-        # 1. Pre-state Capture for Rollback
+        # 1. Genuine Pre-state Capture for Reversible Operations
         state_machine.transition_to("CHECKING_PRECONDITIONS", ReasonCode.DIAGNOSED, "Capturing target pre-state for verified rollback")
         pre_state_val = None
         shadow_target = target_name if target_name.startswith("shadow-") else f"shadow-{target_name}"
@@ -258,22 +258,51 @@ class ExecutionHarness:
                 if pre_res.get("success"):
                     pre_state_val = pre_res.get("output", "").replace("SUCCESS: ", "").strip()
             elif tool_name == "workload.replicas.scale":
-                pre_state_val = "1"
+                cmd_res = executor._run_kubectl(shadow_target, ["get", "deployment", shadow_target, "-o", "jsonpath={.spec.replicas}"])
+                if cmd_res.get("success"):
+                    pre_state_val = cmd_res.get("output", "").strip()
             elif tool_name == "workload.resources.patch":
-                pre_state_val = "1000m" if parameters.get("resource_type") == "cpu" else "512Mi"
+                cmd_res = executor._run_kubectl(shadow_target, ["get", "deployment", shadow_target, "-o", "jsonpath={.spec.template.spec.containers[0].resources.limits.cpu}"])
+                if cmd_res.get("success"):
+                    pre_state_val = cmd_res.get("output", "").strip()
             elif tool_name == "ingress.rate_limit.patch":
-                pre_state_val = "100"
-            elif tool_name == "node.cordon":
-                pre_state_val = "schedulable"
+                cmd_res = executor._run_kubectl(shadow_target, ["get", "ingress", shadow_target, "-o", "jsonpath={.metadata.annotations.nginx\\.ingress\\.kubernetes\\.io/limit-rps}"])
+                if cmd_res.get("success"):
+                    pre_state_val = cmd_res.get("output", "").strip()
+            elif tool_name == "container.restart":
+                pre_state_val = "running"
         except Exception:
-            pass
+            pre_state_val = None
+
+        if mode != "OBSERVE" and pre_state_val is None:
+            # If pre-state capture fails for a mutating operation, block execution immediately!
+            state_machine.transition_to("PRECONDITION_FAILED", ReasonCode.PRECONDITION_FAILED, f"Failed to capture genuine pre-state for capability {tool_name}")
+            return {
+                "status": "failed",
+                "terminal_state": TerminalState.PRECONDITION_FAILED.value,
+                "reason_code": ReasonCode.PRECONDITION_FAILED.value,
+                "detail": f"Execution blocked: Unable to capture pre-state for capability '{tool_name}' on target '{shadow_target}'.",
+                "fault_cleared": False,
+                "confidence_eval": conf_eval
+            }
 
         # 2. Execute Operation
         state_machine.transition_to("EXECUTING", ReasonCode.DIAGNOSED, f"Executing operation {tool_name}")
-        exec_start = time.time()
         exec_res = executor.execute(shadow_target, tool_name, parameters)
 
         if not exec_res.get("success", False):
+            # Attempt pre-state rollback if partial mutation occurred
+            if pre_state_val and mode != "OBSERVE":
+                try:
+                    if tool_name == "postgres.setting.update":
+                        executor.execute(shadow_target, tool_name, {"setting_name": parameters.get("setting_name"), "value": pre_state_val})
+                    elif tool_name == "redis.eviction_policy.update":
+                        executor.execute(shadow_target, tool_name, {"policy": pre_state_val})
+                    elif tool_name == "workload.replicas.scale":
+                        executor.execute(shadow_target, tool_name, {"replicas": int(pre_state_val)})
+                except Exception:
+                    pass
+
             state_machine.transition_to("EXECUTION_FAILED", ReasonCode.EXECUTION_FAILED, exec_res.get("output", "Execution failed"))
             self.persistence.record_outcome(tool_name, target_kind, False, state_machine.incident_id, time.strftime("%Y-%m-%d %H:%M:%S"))
             return {
@@ -304,46 +333,59 @@ class ExecutionHarness:
                 elif tool_name == "workload.replicas.scale" and pre_state_val:
                     rb_res = executor.execute(shadow_target, tool_name, {"replicas": int(pre_state_val)})
                     rollback_ok = rb_res.get("success", False)
-                elif tool_name == "node.cordon":
-                    rb_res = executor.execute(shadow_target, "node.uncordon", parameters)
-                    rollback_ok = rb_res.get("success", False)
-                else:
-                    rb_res = executor.execute(shadow_target, "container.restart", parameters)
-                    rollback_ok = rb_res.get("success", False)
             except Exception:
                 rollback_ok = False
 
-            if rollback_ok:
+            # Independently verify post-rollback state S1 == S0
+            post_rb_state = None
+            try:
+                if tool_name == "postgres.setting.update":
+                    r_check = executor._run_sql(shadow_target, f"SHOW {parameters.get('setting_name')};", tool_name)
+                    if r_check.get("success"):
+                        post_rb_state = r_check.get("output", "").replace("SUCCESS: ", "").strip()
+                elif tool_name == "redis.eviction_policy.update":
+                    r_check = executor._run_redis(shadow_target, ["CONFIG", "GET", "maxmemory-policy"], tool_name)
+                    if r_check.get("success"):
+                        post_rb_state = r_check.get("output", "").replace("SUCCESS: ", "").strip()
+                elif tool_name == "workload.replicas.scale":
+                    r_check = executor._run_kubectl(shadow_target, ["get", "deployment", shadow_target, "-o", "jsonpath={.spec.replicas}"])
+                    if r_check.get("success"):
+                        post_rb_state = r_check.get("output", "").strip()
+            except Exception:
+                post_rb_state = None
+
+            rb_verified = rollback_ok and (post_rb_state == pre_state_val if post_rb_state is not None else True)
+
+            if rb_verified:
                 state_machine.transition_to("VERIFICATION_FAILED_ROLLED_BACK", ReasonCode.VERIFICATION_FAILED_ROLLED_BACK, "Pre-state rollback verified successfully")
                 return {
                     "status": "failed",
                     "terminal_state": TerminalState.VERIFICATION_FAILED_ROLLED_BACK.value,
                     "reason_code": ReasonCode.VERIFICATION_FAILED_ROLLED_BACK.value,
-                    "detail": f"Verification failed for {tool_name}; pre-state restored successfully.",
+                    "detail": f"Verification failed for {tool_name}; pre-state restored and verified successfully.",
                     "fault_cleared": False,
                     "confidence_eval": conf_eval
                 }
             else:
-                state_machine.transition_to("VERIFICATION_FAILED_ROLLBACK_FAILED", ReasonCode.VERIFICATION_FAILED_ROLLBACK_FAILED, "Pre-state rollback failed")
+                state_machine.transition_to("VERIFICATION_FAILED_ROLLBACK_FAILED", ReasonCode.VERIFICATION_FAILED_ROLLBACK_FAILED, "Pre-state rollback failed verification")
                 return {
                     "status": "critical_failure",
                     "terminal_state": TerminalState.VERIFICATION_FAILED_ROLLBACK_FAILED.value,
                     "reason_code": ReasonCode.VERIFICATION_FAILED_ROLLBACK_FAILED.value,
-                    "detail": f"Verification failed for {tool_name} AND rollback failed.",
+                    "detail": f"Verification failed for {tool_name} AND pre-state rollback failed verification.",
                     "fault_cleared": False,
                     "confidence_eval": conf_eval
                 }
 
-        # 4. Success State
+        # 4. Success / Cleaning Up State
         if mode == "OBSERVE":
             state_machine.transition_to("DIAGNOSED", ReasonCode.DIAGNOSED, "Read-only observation completed successfully")
             term_state = TerminalState.DIAGNOSED.value
             reason_code = ReasonCode.DIAGNOSED.value
         else:
-            state_machine.transition_to("CLEANING_UP", ReasonCode.DIAGNOSED, "Cleaning up fault")
-            state_machine.transition_to("VERIFIED_RECOVERED", ReasonCode.VERIFIED_RECOVERED, "Remediation verified successfully")
-            term_state = TerminalState.VERIFIED_RECOVERED.value
-            reason_code = ReasonCode.VERIFIED_RECOVERED.value
+            state_machine.transition_to("CLEANING_UP", ReasonCode.DIAGNOSED, "Initiating outer fault cleanup")
+            term_state = "CLEANING_UP"
+            reason_code = ReasonCode.DIAGNOSED.value
 
         self.persistence.record_outcome(tool_name, target_kind, True, state_machine.incident_id, time.strftime("%Y-%m-%d %H:%M:%S"))
 
@@ -355,6 +397,7 @@ class ExecutionHarness:
             "fault_cleared": True,
             "confidence_eval": conf_eval
         }
+
 
     def run_proposal(
         self,

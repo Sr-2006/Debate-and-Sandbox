@@ -77,18 +77,22 @@ def build_action_proposed(
     if not solution and "orchestrator" in result:
         solution = result["orchestrator"].get("technical_solution", {})
 
-    conf_num = result.get("confidence_score", solution.get("confidence", 85))
-    if isinstance(conf_num, (int, float)):
-        conf_int = int(conf_num * 100) if conf_num <= 1.0 else int(conf_num)
-        conf_float = conf_int / 100.0
-    else:
-        conf_int = 85
-        conf_float = 0.85
+    conf_raw = solution.get("confidence") or result.get("confidence") or result.get("confidence_score")
+    conf_float = None
+    if conf_raw is not None:
+        try:
+            conf_float = float(conf_raw) / 100.0 if float(conf_raw) > 1.0 else float(conf_raw)
+        except Exception:
+            conf_float = None
+    
+    conf_int = int(conf_float * 100) if conf_float is not None else 0
 
     safety_violation = bool(result.get("safety_violation", solution.get("safety_violation", False)))
     if safety_violation:
         conf_int = min(conf_int, VETO_CONFIDENCE_CAP)
-        conf_float = min(conf_float, VETO_CONFIDENCE_CAP / 100.0)
+        if conf_float is not None:
+            conf_float = min(conf_float, VETO_CONFIDENCE_CAP / 100.0)
+
 
     execution_tier = result.get("execution_tier", "TIER_1_AUTONOMOUS_EXECUTION")
     if safety_violation:
