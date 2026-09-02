@@ -1,6 +1,6 @@
 # Multi-Agent Debate Execution Report: case_04_selective_resample
-**Timestamp:** `2026-09-02T19:59:50.426759`  
-**Total Pipeline Latency:** `3.01s`  
+**Timestamp:** `2026-09-02T20:39:53.857957`  
+**Total Pipeline Latency:** `0.0s`  
 **Consensus Score:** `0.9` (Threshold: `0.85`)  
 **Round 2 Debated:** `No (Single Pass Optimization)`  
 **Calculated Confidence Score:** `90.0`
@@ -29,10 +29,10 @@ Analyze PostgreSQL lock contention and output remediation steps.
 ## 2. Performance & Timing Benchmarks
 | Pipeline Phase | Duration (seconds) |
 | :--- | :--- |
-| Round 1 Analysis | 3.01s |
+| Round 1 Analysis | 0.0s |
 | Round 2 Iterative Debate | 0.0s |
 | Orchestrator Synthesis | 0.0s |
-| **Total Execution Latency** | **3.01s** |
+| **Total Execution Latency** | **0.0s** |
 
 ## 3. Round 1: Independent Agent Analysis
 ### RECOVERY ENGINEER (Optimist) (Latency: 0.0s)

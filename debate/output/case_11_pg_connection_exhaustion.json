@@ -1,26 +1,26 @@
 {
     "incident_id": "case_11_pg_connection_exhaustion",
-    "timestamp": "2026-09-02T20:00:11.705104",
+    "timestamp": "2026-09-02T20:39:54.048682",
     "problem": "### INCIDENT CONTEXT [case_11_pg_connection_exhaustion]\n- **Target Service**: `postgres-db` | **Severity**: `CRITICAL`\n- **Role**: primary-relational-database\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: PostgreSQL backend connection pool maxed out at 100/100 connections.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `FATAL [postgres-db] FATAL: remaining connection slots are reserved for non-replication superuser connections`\n- **Top Log Samples**:\n  - [2026-08-10T18:00:00.000Z] FATAL: [postgres-db] FATAL: sorry, too many clients already. Active connections=100/100.\n- **Metrics**: active_connections=100, max_connections=100\n\n### TASK INSTRUCTION\nIdentify PostgreSQL connection pool exhaustion and output safe connection pool reset steps.",
     "round_1": {
         "optimist": {
             "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Recovery Engineer focused on rapid service restoration.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot max 15 words>\", \"primary_component\": \"<exact_service_name_from_telemetry>\", \"evidence\": \"<exact log line or metric you relied on>\", \"catalog_intent\": \"<registered_capability_type>: {<json_parameters>}\", \"triage\": \"<0-5 min actions>\", \"stab\": \"<5-60 min actions>\", \"rca\": \"<root cause grounded in the evidence>\", \"conf\": 0.95}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be the exact service/container name identified in telemetry (e.g. postgres-db, redis, api-gateway).\n- catalog_intent MUST be a registered capability (e.g. postgres.setting.update, redis.eviction_policy.update, workload.replicas.scale, workload.resources.patch, tls.certificate.renew, container.restart, observe.logs.search).\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Focus on fastest safe recovery. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_11_pg_connection_exhaustion]\n- **Target Service**: `postgres-db` | **Severity**: `CRITICAL`\n- **Role**: primary-relational-database\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: PostgreSQL backend connection pool maxed out at 100/100 connections.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `FATAL [postgres-db] FATAL: remaining connection slots are reserved for non-replication superuser connections`\n- **Top Log Samples**:\n  - [2026-08-10T18:00:00.000Z] FATAL: [postgres-db] FATAL: sorry, too many clients already. Active connections=100/100.\n- **Metrics**: active_connections=100, max_connections=100\n\n### TASK INSTRUCTION\nIdentify PostgreSQL connection pool exhaustion and output safe connection pool reset steps.",
             "response": {
-                "error": "Unable to generate response due to "
+                "error": "All connection attempts failed"
             },
             "latency": 0.0
         },
         "critic": {
             "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Reliability Engineer focused on operational risk, safety, and preventing secondary outages.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot safety check max 15 words>\", \"primary_component\": \"<exact_service_name_from_telemetry>\", \"evidence\": \"<exact log line or metric you relied on>\", \"catalog_intent\": \"<registered_capability_type>: {<json_parameters>}\", \"triage\": \"<0-5 min risk-mitigated actions>\", \"stab\": \"<5-60 min stabilization steps>\", \"rca\": \"<root cause grounded in the evidence>\", \"conf\": 0.90}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be the exact service/container name identified in telemetry (e.g. postgres-db, redis, api-gateway).\n- catalog_intent MUST be a registered capability (e.g. postgres.setting.update, redis.eviction_policy.update, workload.replicas.scale, workload.resources.patch, tls.certificate.renew, container.restart, observe.logs.search).\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Focus on zero data loss and safe rollbacks. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_11_pg_connection_exhaustion]\n- **Target Service**: `postgres-db` | **Severity**: `CRITICAL`\n- **Role**: primary-relational-database\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: PostgreSQL backend connection pool maxed out at 100/100 connections.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `FATAL [postgres-db] FATAL: remaining connection slots are reserved for non-replication superuser connections`\n- **Top Log Samples**:\n  - [2026-08-10T18:00:00.000Z] FATAL: [postgres-db] FATAL: sorry, too many clients already. Active connections=100/100.\n- **Metrics**: active_connections=100, max_connections=100\n\n### TASK INSTRUCTION\nIdentify PostgreSQL connection pool exhaustion and output safe connection pool reset steps.",
             "response": {
-                "error": "Unable to generate response due to "
+                "error": "All connection attempts failed"
             },
             "latency": 0.0
         },
         "fact_checker": {
             "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Verification Engineer focused on log and telemetry evidence validation.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot evidence verification max 15 words>\", \"primary_component\": \"<exact_service_name_from_telemetry>\", \"evidence\": \"<exact log line or metric you relied on>\", \"catalog_intent\": \"<registered_capability_type>: {<json_parameters>}\", \"triage\": \"<0-5 min evidence checks>\", \"stab\": \"<5-60 min metric validations>\", \"rca\": \"<grounded root cause analysis>\", \"conf\": 0.95}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be the exact service/container name identified in telemetry (e.g. postgres-db, redis, api-gateway).\n- catalog_intent MUST be a registered capability (e.g. postgres.setting.update, redis.eviction_policy.update, workload.replicas.scale, workload.resources.patch, tls.certificate.renew, container.restart, observe.logs.search).\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Base analysis strictly on provided logs and metrics. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_11_pg_connection_exhaustion]\n- **Target Service**: `postgres-db` | **Severity**: `CRITICAL`\n- **Role**: primary-relational-database\n- **Target Status**: `running` (degraded)\n- \u26a0\ufe0f **Active Mutation**: PostgreSQL backend connection pool maxed out at 100/100 connections.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `FATAL [postgres-db] FATAL: remaining connection slots are reserved for non-replication superuser connections`\n- **Top Log Samples**:\n  - [2026-08-10T18:00:00.000Z] FATAL: [postgres-db] FATAL: sorry, too many clients already. Active connections=100/100.\n- **Metrics**: active_connections=100, max_connections=100\n\n### TASK INSTRUCTION\nIdentify PostgreSQL connection pool exhaustion and output safe connection pool reset steps.",
             "response": {
-                "error": "Unable to generate response due to "
+                "error": "All connection attempts failed"
             },
             "latency": 0.0
         }
@@ -57,9 +57,9 @@
         "latency": 0.0
     },
     "performance": {
-        "round1_time": 3.09,
+        "round1_time": 0.0,
         "round2_time": 0.0,
         "orchestrator_time": 0.0,
-        "total_pipeline_time": 3.09
+        "total_pipeline_time": 0.0
     }
 }

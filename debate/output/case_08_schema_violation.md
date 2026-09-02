@@ -1,6 +1,6 @@
 # Multi-Agent Debate Execution Report: case_08_schema_violation
-**Timestamp:** `2026-09-02T20:00:02.563549`  
-**Total Pipeline Latency:** `3.03s`  
+**Timestamp:** `2026-09-02T20:39:53.970442`  
+**Total Pipeline Latency:** `0.0s`  
 **Consensus Score:** `0.9` (Threshold: `0.85`)  
 **Round 2 Debated:** `No (Single Pass Optimization)`  
 **Calculated Confidence Score:** `90.0`
@@ -29,10 +29,10 @@ Provide a verbose detailed step-by-step reasoning explanation exceeding 30 words
 ## 2. Performance & Timing Benchmarks
 | Pipeline Phase | Duration (seconds) |
 | :--- | :--- |
-| Round 1 Analysis | 3.03s |
+| Round 1 Analysis | 0.0s |
 | Round 2 Iterative Debate | 0.0s |
 | Orchestrator Synthesis | 0.0s |
-| **Total Execution Latency** | **3.03s** |
+| **Total Execution Latency** | **0.0s** |
 
 ## 3. Round 1: Independent Agent Analysis
 ### RECOVERY ENGINEER (Optimist) (Latency: 0.0s)

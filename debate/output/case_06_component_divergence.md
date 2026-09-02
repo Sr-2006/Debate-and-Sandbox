@@ -1,6 +1,6 @@
 # Multi-Agent Debate Execution Report: case_06_component_divergence
-**Timestamp:** `2026-09-02T19:59:56.398144`  
-**Total Pipeline Latency:** `2.94s`  
+**Timestamp:** `2026-09-02T20:39:53.916092`  
+**Total Pipeline Latency:** `0.0s`  
 **Consensus Score:** `0.0` (Threshold: `0.85`)  
 **Round 2 Debated:** `No (Single Pass Optimization)`  
 **Calculated Confidence Score:** `0.0`
@@ -27,10 +27,10 @@ Analyze storage gateway telemetry and identify the primary component.
 ## 2. Performance & Timing Benchmarks
 | Pipeline Phase | Duration (seconds) |
 | :--- | :--- |
-| Round 1 Analysis | 2.93s |
+| Round 1 Analysis | 0.0s |
 | Round 2 Iterative Debate | 0.0s |
 | Orchestrator Synthesis | 0.0s |
-| **Total Execution Latency** | **2.94s** |
+| **Total Execution Latency** | **0.0s** |
 
 ## 3. Round 1: Independent Agent Analysis
 ### RECOVERY ENGINEER (Optimist) (Latency: 0.0s)

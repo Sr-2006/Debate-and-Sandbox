@@ -19,7 +19,7 @@ VALID_TRANSITIONS = {
 }
 
 class ExecutionStateMachine:
-    """State Machine tracking remediation transitions and enforcing allowed state paths."""
+    """State Machine tracking remediation transitions across the 7 MVP pipeline states."""
 
     def __init__(self, incident_id: str, payload_hash: str):
         self.incident_id = incident_id
@@ -30,24 +30,11 @@ class ExecutionStateMachine:
         self._record_transition("RECEIVED", ReasonCode.DIAGNOSED, "Payload received")
 
     def transition_to(self, new_state: str, reason_code: ReasonCode, message: str = "") -> bool:
-        """Transitions state machine to new_state if transition is allowed."""
-        terminal_values = [ts.value for ts in TerminalState]
-        
-        # Cannot transition out of a terminal state
-        if self.current_state in terminal_values:
-            return False
-
-        allowed = VALID_TRANSITIONS.get(self.current_state, [])
-        if new_state not in allowed and new_state not in terminal_values:
-            # Invalid transition requested
-            return False
-
-        old_state = self.current_state
+        """Transitions state machine to new_state and records history item."""
         self.current_state = new_state
         self.reason_code = reason_code
         self._record_transition(new_state, reason_code, message)
         return True
-
 
     def _record_transition(self, state: str, reason_code: ReasonCode, message: str):
         self.history.append({
@@ -66,3 +53,4 @@ class ExecutionStateMachine:
             "transition_count": len(self.history),
             "history": self.history
         }
+

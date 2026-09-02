@@ -111,8 +111,7 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
 
     sm = ExecutionStateMachine(incident_id, payload_hash)
 
-    # 1. Step 1: RECEIVED
-    sm.transition_to("RECEIVED", ReasonCode.DIAGNOSED, "Received Phase 4 handoff envelope")
+    # 1. Step 1: RECEIVED (Recorded on ExecutionStateMachine initialization)
 
     # 2. Step 2: VALIDATED
     is_valid, errs, val_reason = validate_envelope(v2_envelope)
@@ -177,21 +176,22 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
     if diag_conf is not None and diag_conf < 0.50:
         # Run read-only observation only
         sm.transition_to("OBSERVED_BEFORE", ReasonCode.DIAGNOSED, "Running read-only observation for low confidence case")
-        doc_exec = DockerExecutor()
+        doc_exec = get_executor("docker_executor", is_simulated=simulated_flag)
         obs_target = shadow_target or "shadow-container"
         obs_res = doc_exec.execute(obs_target, "observe.logs.search", {"max_lines": 50})
+        obs_attestation = check_attestation(obs_target, blocked=False, is_simulated=simulated_flag)
         sm.transition_to("REPORTED", ReasonCode.DIAGNOSED, "Read-only observation complete")
         duration_ms = int((time.perf_counter() - start_time) * 1000)
         return {
             "status": "READ_ONLY_OBSERVED",
             "exact_input": v2_envelope,
             "target": target_ref,
-            "attestation": check_attestation(obs_target, blocked=False),
+            "attestation": obs_attestation,
             "before_observations": {"obs": obs_res},
             "fault_setup": {"injected": False},
             "execution": {"capability": "observe.logs.search", "parameters": {"max_lines": 50}, "result": obs_res, "duration_ms": 0},
             "after_observations": {"obs": obs_res},
-            "verification": {"passed": True},
+            "verification": {"passed": bool(obs_res.get("success", False))},
             "rollback": {"attempted": False, "result": None},
             "cleanup": {"completed": True},
             "state_history": sm.get_summary()["history"],
@@ -199,7 +199,8 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
         }
 
     if mode == "MUTATE_HIGH_RISK" or requires_human_approval:
-        sm.transition_to("BLOCKED_SAFETY_VIOLATION", ReasonCode.BLOCKED_SAFETY_VIOLATION, f"High risk action {intent_type} requires human approval")
+        sm.transition_to("BLOCKED_SAFETY_VIOLATION", ReasonCode.BLOCKED_SAFETY, f"High risk action {intent_type} requires human approval")
+
         duration_ms = int((time.perf_counter() - start_time) * 1000)
         return {
             "status": "HUMAN_REVIEW_REQUIRED",
@@ -406,7 +407,9 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
             final_status = "SANDBOX_FAILED_ROLLBACK_FAILED"
 
     # 7. Step 7: REPORTED
-    sm.transition_to("REPORTED", ReasonCode.VERIFIED_RECOVERED if final_status == "SANDBOX_VERIFIED" else ReasonCode.VERIFICATION_FAILED_ROLLED_BACK, f"Phase 4 completed with status {final_status}")
+    reported_reason = ReasonCode.VERIFIED_RECOVERED if final_status in ["SANDBOX_VERIFIED", "SIMULATION_VERIFIED"] else ReasonCode.VERIFICATION_FAILED_ROLLED_BACK
+    sm.transition_to("REPORTED", reported_reason, f"Phase 4 completed with status {final_status}")
+
 
     # Cleanup fault if injected
     if fault_info.get("injected"):
