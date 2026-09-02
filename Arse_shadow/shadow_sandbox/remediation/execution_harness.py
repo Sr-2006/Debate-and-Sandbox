@@ -38,6 +38,10 @@ class ExecutionHarness:
         tech_sol = data.get("orchestrator", {}).get("technical_solution", {})
         safety_violation = bool(tech_sol.get("safety_violation", False) or data.get("safety_violation", False))
         
+        v2_envelope = data.get("raw_v2_envelope") or data
+        safety_violation = data.get("safety_violation") or (v2_envelope.get("safety_violation") if isinstance(v2_envelope, dict) else False) or tech_sol.get("safety_violation", False)
+
+
         # 1. Safety violation check
         if safety_violation:
             return {
@@ -52,11 +56,30 @@ class ExecutionHarness:
                 "fault_cleared": False
             }
 
-        action_cmds = tech_sol.get("action_commands", [])
-        proposal = self.agent.propose_action(problem_text, action_cmds)
+        intents = v2_envelope.get("intents", []) if isinstance(v2_envelope, dict) else []
+        if intents and isinstance(intents, list):
+            first_intent = intents[0]
+            target_ref = first_intent.get("target_ref") or v2_envelope.get("target_ref") or {}
+            proposal = {
+                "intent_type": first_intent.get("intent_type"),
+                "mode": first_intent.get("mode"),
+                "target": target_ref.get("canonical_name"),
+                "target_kind": target_ref.get("kind", "container"),
+                "target_ref": target_ref,
+                "parameters": first_intent.get("parameters", {}),
+                "evidence_refs": first_intent.get("evidence_refs", []),
+                "requires_human_approval": first_intent.get("requires_human_approval", False),
+                "qualification_run": data.get("qualification_run") or v2_envelope.get("qualification_run"),
+
+                "confidence": v2_envelope.get("phase3_confidence", {}).get("score", 0.85) if isinstance(v2_envelope.get("phase3_confidence"), dict) else 0.85
+            }
+        else:
+            action_cmds = tech_sol.get("action_commands", [])
+            proposal = self.agent.propose_action(problem_text, action_cmds)
 
         sm = ExecutionStateMachine(incident_id, "legacy_hash")
         res = self.run_proposal(proposal, problem_text, sm)
+
         res["incident_id"] = incident_id
         res["gate_decision"] = res.get("terminal_state", "VERIFIED_RECOVERED")
         res["confidence_score"] = res.get("confidence_eval", {}).get("execution_confidence", 0.0)
@@ -122,16 +145,21 @@ class ExecutionHarness:
             }
 
         # 3. Confidence Evaluation
-        state_machine.transition_to("CHECKING_CONFIDENCE", ReasonCode.DIAGNOSED, "Calculating multi-score confidence")
+        state_machine.transition_to("CHECKING_CONFIDENCE", ReasonCode.DIAGNOSED, "Calculating multi-score confidence and qualification context")
+        mode = proposal.get("mode") or ("OBSERVE" if (tool_name or "").startswith("observe") or (tool_name or "").endswith(".diagnose") else "MUTATE_REVERSIBLE")
+        qual_ctx = proposal.get("qualification_run") if isinstance(proposal.get("qualification_run"), dict) else None
+
         conf_eval = self.confidence_analyzer.calculate_confidence(
             tool_name or "",
             target_kind,
             phase3_confidence=proposal.get("confidence", 0.85),
-            safety_violation=proposal.get("requires_human_approval", False)
+            safety_violation=proposal.get("requires_human_approval", False),
+            mode=mode,
+            qualification_context=qual_ctx
         )
 
         reason_code_str = conf_eval.get("reason_code")
-        if reason_code_str == ReasonCode.INSUFFICIENT_HISTORY.value or not conf_eval.get("has_sufficient_history", True):
+        if conf_eval.get("confidence_required", True) and (reason_code_str == ReasonCode.INSUFFICIENT_HISTORY.value or not conf_eval.get("has_sufficient_history", True)):
             state_machine.transition_to("INSUFFICIENT_HISTORY", ReasonCode.INSUFFICIENT_HISTORY, "Execution halted due to insufficient history")
             return {
                 "status": "blocked",
@@ -141,7 +169,7 @@ class ExecutionHarness:
                 "fault_cleared": False,
                 "confidence_eval": conf_eval
             }
-        elif reason_code_str == ReasonCode.BLOCKED_LOW_CONFIDENCE.value or conf_eval.get("execution_confidence", 1.0) < 0.70:
+        elif conf_eval.get("confidence_required", True) and (reason_code_str == ReasonCode.BLOCKED_LOW_CONFIDENCE.value or conf_eval.get("execution_confidence", 1.0) < 0.70):
             state_machine.transition_to("BLOCKED_LOW_CONFIDENCE", ReasonCode.BLOCKED_LOW_CONFIDENCE, "Execution halted due to low confidence score")
             return {
                 "status": "blocked",
@@ -152,11 +180,13 @@ class ExecutionHarness:
                 "confidence_eval": conf_eval
             }
 
+
         # 4. Check preconditions & capture target pre-state for rollback
         state_machine.transition_to("CHECKING_PRECONDITIONS", ReasonCode.DIAGNOSED, "Checking preconditions and capturing target pre-state")
 
-        executor_name = proposal.get("executor_name")
+        executor_name = proposal.get("executor_name") or self.policy_engine.capabilities.get(tool_name or "", {}).get("executor")
         if not executor_name or executor_name not in self.agent.executors:
+
             state_machine.transition_to("BLOCKED_UNKNOWN_CAPABILITY", ReasonCode.BLOCKED_UNKNOWN_CAPABILITY, f"Unregistered capability {tool_name}")
             return {
                 "status": "blocked",

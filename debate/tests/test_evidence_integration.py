@@ -217,9 +217,18 @@ def _sample_result(safety_violation: bool = False, confidence: int = 90) -> dict
     return {
         "solution": {
             "consensus_rc": "PostgreSQL connection exhaustion",
-            "primary_component": "database",
+            "primary_component": "postgres-db",
             "evidence": "log_01_postgres_conn_exhausted",
-            "action_commands": ["systemctl restart postgresql"],
+            "intents": [
+                {
+                    "intent_id": "int_sample_1",
+                    "intent_type": "postgres.setting.update",
+                    "mode": "MUTATE_REVERSIBLE",
+                    "target_kind": "database",
+                    "parameters": {"setting_name": "max_connections", "value": "200"},
+                    "evidence_refs": ["log_01_postgres_conn_exhausted"]
+                }
+            ],
             "final_rca": "Connection pool saturated.",
             "consensus_quality": "HIGH",
             "scoring_metadata": {"veto_reason": None},
@@ -231,6 +240,7 @@ def _sample_result(safety_violation: bool = False, confidence: int = 90) -> dict
         "round_2_executed": False,
         "total_latency_seconds": 12.5,
     }
+
 
 
 def test_action_envelope_shape():

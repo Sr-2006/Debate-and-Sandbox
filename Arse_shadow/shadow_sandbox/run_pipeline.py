@@ -38,7 +38,7 @@ def process_incident(incident_file: str, settle_wait_s: float = 1.0) -> Optional
     incident_id = incident.get("incident_id", os.path.splitext(os.path.basename(incident_file))[0])
     problem_text = incident.get("problem", incident.get("problem_summary", ""))
 
-    # 1. State Machine initialization & Validation BEFORE Idempotency Claim
+    # 1. State Machine initialization & Validation BEFORE Idempotency Claim & BEFORE Fault Setup
     payload_hash = incident.get("payload_hash") or compute_payload_hash(incident)
     sm = ExecutionStateMachine(incident_id, payload_hash)
 
@@ -46,25 +46,39 @@ def process_incident(incident_file: str, settle_wait_s: float = 1.0) -> Optional
         print(f"[ORCHESTRATOR] [{incident_id}] Invalid initial state transition to VALIDATING")
         return None
 
-    # Check v2 envelope structure
+    # Lossless V2 Envelope check
     v2_envelope = incident.get("raw_v2_envelope") or incident
-    if isinstance(v2_envelope, dict) and v2_envelope.get("schema_version") == "2.0":
-        from contracts.validation import validate_envelope
-        is_valid, errs, val_reason = validate_envelope(v2_envelope)
-        if not is_valid:
-            sm.transition_to(val_reason.value, val_reason, "; ".join(errs))
-            summary = sm.get_summary()
-            outcome = {
-                "incident_id": incident_id,
-                "run_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "gate_decision": val_reason.value,
-                "confidence_score": 0.0,
-                "human_intervention_required": True,
-                "message": f"Payload validation failed: {'; '.join(errs)}",
-                "fault_cleared": False,
-                "state_machine_history": summary["history"]
-            }
-            return generate_report(outcome)
+    if not isinstance(v2_envelope, dict) or v2_envelope.get("schema_version") != "2.0":
+        sm.transition_to(TerminalState.BLOCKED_LEGACY_PAYLOAD.value, ReasonCode.BLOCKED_LEGACY_PAYLOAD, "Unstructured legacy payload blocked; schema v2 required")
+        summary = sm.get_summary()
+        outcome = {
+            "incident_id": incident_id,
+            "run_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "gate_decision": "BLOCKED_LEGACY_PAYLOAD",
+            "confidence_score": 0.0,
+            "human_intervention_required": True,
+            "message": "Execution blocked: Legacy string payloads are blocked; envelope v2 structured intent required.",
+            "fault_cleared": False,
+            "state_machine_history": summary["history"]
+        }
+        return generate_report(outcome)
+
+    from contracts.validation import validate_envelope
+    is_valid, errs, val_reason = validate_envelope(v2_envelope)
+    if not is_valid:
+        sm.transition_to(val_reason.value, val_reason, "; ".join(errs))
+        summary = sm.get_summary()
+        outcome = {
+            "incident_id": incident_id,
+            "run_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "gate_decision": val_reason.value,
+            "confidence_score": 0.0,
+            "human_intervention_required": True,
+            "message": f"Payload validation failed: {'; '.join(errs)}",
+            "fault_cleared": False,
+            "state_machine_history": summary["history"]
+        }
+        return generate_report(outcome)
 
     # 2. Atomic Deduplication via SQLite Inbox Claim (AFTER validation passes)
     persistence = SandboxPersistence()
@@ -86,33 +100,51 @@ def process_incident(incident_file: str, settle_wait_s: float = 1.0) -> Optional
         print(f"[ORCHESTRATOR] [{incident_id}] Invalid state transition to CLAIMED")
         return None
 
-    # Extract typed proposals & target_ref
-    tech_sol = incident.get("orchestrator", {}).get("technical_solution", {})
-    action_cmds = tech_sol.get("action_commands", [])
+    # Extract structured intent and target_ref directly
+    intents = v2_envelope.get("intents", [])
+    first_intent = intents[0] if intents else {}
+    target_ref = first_intent.get("target_ref") or v2_envelope.get("target_ref") or {}
+    target = target_ref.get("canonical_name")
+
+    from contracts.validation import get_capabilities
+    capabilities = get_capabilities()
+    cap_meta = capabilities.get(first_intent.get("intent_type"), {})
+
+    proposal = {
+        "intent_type": first_intent.get("intent_type"),
+        "mode": first_intent.get("mode"),
+        "target": target,
+        "target_kind": target_ref.get("kind", "container"),
+        "target_ref": target_ref,
+        "parameters": first_intent.get("parameters", {}),
+        "evidence_refs": first_intent.get("evidence_refs", []),
+        "requires_human_approval": first_intent.get("requires_human_approval", v2_envelope.get("safety_violation", False)),
+        "qualification_run": incident.get("qualification_run") or v2_envelope.get("qualification_run"),
+        "executor_name": first_intent.get("executor_name") or cap_meta.get("executor"),
+        "verifier_name": first_intent.get("verifier_name") or cap_meta.get("verifier"),
+        "confidence": v2_envelope.get("phase3_confidence", {}).get("score", 0.85) if isinstance(v2_envelope.get("phase3_confidence"), dict) else 0.85
+    }
+
 
     remediation_agent = BoundedRemediationAgent()
-    proposal = remediation_agent.propose_action(problem_text, action_cmds)
 
-    # Extract target service & fault setup
+    # 3. Fault Setup Gate (runs AFTER envelope, target, capability, parameter validation)
     fault_agent = FaultSelectionAgent()
-    target = fault_agent.extract_target_service(problem_text)
-    primitive, params = fault_agent.infer_fault_primitive(problem_text, "", target)
+    primitive, params = fault_agent.infer_fault_primitive(problem_text, "", target or "")
 
-    # 3. Attestation & Capability & Policy & Confidence & Execution via Harness (drives state path)
-    harness = ExecutionHarness(agent=remediation_agent, persistence=persistence)
-
-    # Run fault injection setup if primitive present
     fault_setup_ok = True
     fault_error_msg = ""
-    if primitive:
+    if primitive and target:
         try:
-            recover_all(target)
-            before_state = fault_agent.execute_fault_primitive(target, primitive, params)
-            log_fault_event(incident_id, primitive, target, params, before_state, active=True)
+            shadow_target = target if target.startswith("shadow-") else f"shadow-{target}"
+            recover_all(shadow_target)
+            before_state = fault_agent.execute_fault_primitive(shadow_target, primitive, params)
+            log_fault_event(incident_id, primitive, shadow_target, params, before_state, active=True)
         except Exception as e:
             fault_setup_ok = False
             fault_error_msg = f"Fault setup failed for primitive '{primitive}': {str(e)}"
             print(f"[ORCHESTRATOR] [{incident_id}] {fault_error_msg}")
+
 
     if not fault_setup_ok:
         sm.transition_to("SETTING_UP_FAULT", ReasonCode.DIAGNOSED, "Applying fault primitive")
@@ -132,22 +164,24 @@ def process_incident(incident_file: str, settle_wait_s: float = 1.0) -> Optional
         }
         return generate_report(outcome)
 
+    # 4. Attestation & Policy & Confidence & Pre-State & Execution via Harness
+    harness = ExecutionHarness(agent=remediation_agent, persistence=persistence)
     exec_res = harness.run_proposal(proposal, problem_text, sm)
 
     # Clean up fault
-    if primitive:
+    if primitive and target:
         try:
             recover_all(target)
         except Exception as e:
             pass
 
-    # 4. Write Report
+    # 5. Write Report
     summary = sm.get_summary()
     outcome = {
         "incident_id": incident_id,
         "run_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "gate_decision": summary["terminal_state"],
-        "confidence_score": exec_res.get("confidence_eval", {}).get("execution_confidence", 0.85),
+        "confidence_score": exec_res.get("confidence_eval", {}).get("execution_confidence", 0.0),
         "human_intervention_required": summary["terminal_state"] != "VERIFIED_RECOVERED",
         "message": exec_res.get("detail"),
         "agent_proposal": proposal,
@@ -159,6 +193,7 @@ def process_incident(incident_file: str, settle_wait_s: float = 1.0) -> Optional
     report_path = generate_report(outcome)
     print(f"[ORCHESTRATOR] [{incident_id}] Processed ({summary['terminal_state']}). Report: {report_path}")
     return report_path
+
 
 
 

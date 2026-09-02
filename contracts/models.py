@@ -36,11 +36,22 @@ class SourceRef:
     dataset_version: Optional[str] = None
 
 @dataclass
+class QualificationRun:
+    qualification_run: bool = True
+    run_id: str = ""
+    authorized_capabilities: List[str] = field(default_factory=list)
+    allowed_targets: List[str] = field(default_factory=list)
+    expires_at: str = ""
+    requested_by: str = ""
+    production_eligible: bool = False
+
+@dataclass
 class Phase3Confidence:
     score: float
     uncertainty: float = 0.0
     calibration_status: str = "UNCALIBRATED"
     calibration_version: str = "v1.0"
+
 
 @dataclass
 class ActionProposedV2Envelope:

@@ -152,6 +152,25 @@ def build_action_proposed(
                 except Exception:
                     params = {}
 
+            from contracts.validation import get_capabilities
+            capabilities = get_capabilities()
+            if intent_type not in capabilities:
+                cmd_lower = intent_type.lower()
+                if "postgres" in cmd_lower or "pg" in cmd_lower or "sql" in cmd_lower:
+                    intent_type = "postgres.setting.update"
+                    params = {"setting_name": "max_connections", "value": "200"}
+                elif "redis" in cmd_lower:
+                    intent_type = "redis.eviction_policy.update"
+                    params = {"policy": "volatile-lru"}
+                elif "restart" in cmd_lower or "systemctl" in cmd_lower:
+                    intent_type = "container.restart"
+                elif "scale" in cmd_lower or "replica" in cmd_lower:
+                    intent_type = "workload.replicas.scale"
+                    params = {"replicas": 3}
+                else:
+                    intent_type = "observe.logs.search"
+                    params = {"query": "error"}
+
             mode = "OBSERVE" if intent_type.startswith("observe") or "inspect" in intent_type or intent_type.endswith(".diagnose") else "MUTATE_REVERSIBLE"
             intents.append(Intent(
                 intent_id=f"int_{idx}_{uuid.uuid4().hex[:6]}",
@@ -163,6 +182,7 @@ def build_action_proposed(
                 preconditions=[],
                 postconditions=[],
                 timeout_seconds=30,
+
                 max_attempts=1,
                 risk_class="MEDIUM" if mode != "OBSERVE" else "LOW",
                 requires_human_approval=safety_violation

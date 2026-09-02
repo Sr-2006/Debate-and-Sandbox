@@ -22,7 +22,7 @@ class TestPipelineOrchestrator(unittest.TestCase):
 
     def test_process_incident_blocked(self):
         case_path = os.path.join(
-            os.path.dirname(__file__), "sample_inputs", "case_22_storage_corruption_nuclear.json"
+            os.path.dirname(__file__), "sample_inputs", "case_22.json"
         )
         report_file = process_incident(case_path, settle_wait_s=0.1)
         self.assertIsNotNone(report_file)
@@ -31,9 +31,10 @@ class TestPipelineOrchestrator(unittest.TestCase):
     def test_run_batch_mode(self):
         # Create dummy incident copy in temp directory
         case_22 = os.path.join(
-            os.path.dirname(__file__), "sample_inputs", "case_22_storage_corruption_nuclear.json"
+            os.path.dirname(__file__), "sample_inputs", "case_22.json"
         )
         shutil.copy(case_22, os.path.join(self.test_dir, "case_22.json"))
+
 
         run_batch_mode(self.test_dir, settle_wait_s=0.1)
 

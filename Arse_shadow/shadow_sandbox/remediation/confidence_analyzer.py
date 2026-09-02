@@ -23,8 +23,10 @@ class ConfidenceAnalyzer:
         target_kind: str = "container",
         phase3_confidence: float = 0.85,
         safety_violation: bool = False,
-        mode: Optional[str] = None
+        mode: Optional[str] = None,
+        qualification_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
+
 
         mapping_conf = 1.0 if intent_type else 0.0
         hist = self.persistence.get_capability_history(intent_type, target_kind)
@@ -42,29 +44,38 @@ class ConfidenceAnalyzer:
             var = (alpha_param * beta_param) / ((alpha_param + beta_param) ** 2 * (alpha_param + beta_param + 1))
             execution_lower_bound = max(0.0, mean - 1.645 * math.sqrt(var))
 
-        # Determine mode
+        # Determine mode & qualification context
         is_observe_mode = (
             mode == "OBSERVE"
             or intent_type.startswith("observe.")
             or intent_type.endswith(".diagnose")
         )
 
-        qualification_active = os.environ.get("QUALIFICATION_MODE") == "1"
+        qualification_active = False
+        if qualification_context and isinstance(qualification_context, dict):
+            if qualification_context.get("qualification_run", False):
+                auth_caps = qualification_context.get("authorized_capabilities", [])
+                if not auth_caps or intent_type in auth_caps:
+                    qualification_active = True
+
+        confidence_required = not is_observe_mode
 
         if is_observe_mode:
             has_sufficient_history = True
-            execution_lower_bound = max(execution_lower_bound, 0.95)
+            authorization_basis = "READ_ONLY_POLICY"
             reason_code = ReasonCode.DIAGNOSED
         elif qualification_active:
             has_sufficient_history = True
+            authorization_basis = "QUALIFICATION_RUN"
             reason_code = ReasonCode.DIAGNOSED
         else:
+            authorization_basis = "EMPIRICAL_BETA_POSTERIOR"
             has_sufficient_history = total >= 20
 
         if safety_violation:
             phase3_confidence = min(phase3_confidence, 0.64)
 
-        if not is_observe_mode and not qualification_active:
+        if confidence_required and not qualification_active:
             reason_code = ReasonCode.DIAGNOSED
             if not has_sufficient_history:
                 reason_code = ReasonCode.INSUFFICIENT_HISTORY
@@ -75,12 +86,15 @@ class ConfidenceAnalyzer:
             "diagnosis_confidence": round(phase3_confidence, 4),
             "mapping_confidence": mapping_conf,
             "execution_confidence": round(execution_lower_bound, 4),
+            "confidence_required": confidence_required,
+            "authorization_basis": authorization_basis,
             "sample_size": total,
             "successes": successes,
             "failures": failures,
             "has_sufficient_history": has_sufficient_history,
             "reason_code": reason_code.value
         }
+
 
 
 
