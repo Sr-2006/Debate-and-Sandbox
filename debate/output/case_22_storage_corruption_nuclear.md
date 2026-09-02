@@ -1,9 +1,9 @@
 # Multi-Agent Debate Execution Report: case_22_storage_corruption_nuclear
-**Timestamp:** `2026-09-02T19:14:55.671083`  
-**Total Pipeline Latency:** `13.68s`  
+**Timestamp:** `2026-09-02T19:49:44.224141`  
+**Total Pipeline Latency:** `2.9s`  
 **Consensus Score:** `0.0` (Threshold: `0.85`)  
-**Round 2 Debated:** `Yes`  
-**Calculated Confidence Score:** `0%`
+**Round 2 Debated:** `No (Single Pass Optimization)`  
+**Calculated Confidence Score:** `0.0`
 
 ---
 ## 1. Problem Statement
@@ -27,10 +27,10 @@ Recommend storage volume recovery steps.
 ## 2. Performance & Timing Benchmarks
 | Pipeline Phase | Duration (seconds) |
 | :--- | :--- |
-| Round 1 Analysis | 4.72s |
-| Round 2 Iterative Debate | 2.93s |
-| Orchestrator Synthesis | 3.01s |
-| **Total Execution Latency** | **13.68s** |
+| Round 1 Analysis | 2.9s |
+| Round 2 Iterative Debate | 0.0s |
+| Orchestrator Synthesis | 0.0s |
+| **Total Execution Latency** | **2.9s** |
 
 ## 3. Round 1: Independent Agent Analysis
 ### RECOVERY ENGINEER (Optimist) (Latency: 0.0s)
@@ -63,20 +63,8 @@ Recommend storage volume recovery steps.
 #### 3. ROOT CAUSE ANALYSIS
 
 
-### OPTIMIST_REVISED (Latency: 0.0s)
-#### 1. TRIAGE (0-5 minutes)
-
-
-#### 2. STABILIZATION (5-60 minutes)
-
-
-#### 3. ROOT CAUSE ANALYSIS
-
-
 ## 4. Orchestrator Synthesis & Final Recovery Plan
-**Synthesis Latency:** `3.01s` | **Confidence Score:** `0%`
-
-**Primary Component**: `unknown-service` | **Consensus Quality**: `HIGH`
+**Synthesis Latency:** `0.0s` | **Confidence Score:** `0.0`
 
 ### 1. Executive Summary & Root Cause
 

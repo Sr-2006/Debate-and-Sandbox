@@ -2,7 +2,9 @@ import os
 import glob
 import json
 import pytest
+os.environ["DEBATE_MOCK_LLM"] = "1"
 from run_mvp_pipeline import run_single_problem
+
 
 ALLOWED_OUTCOME_ENUM = {
     "SANDBOX_VERIFIED",
@@ -12,24 +14,27 @@ ALLOWED_OUTCOME_ENUM = {
     "NO_SUPPORTED_ACTION",
     "READ_ONLY_OBSERVED",
     "HUMAN_REVIEW_REQUIRED",
-    "VALIDATION_FAILED"
+    "VALIDATION_FAILED",
+    "NOT_RUN",
+    "PHASE3_FAILED"
 }
 
 
+
 def test_e2e_three_docker_golden_cases():
-    """E2E Golden Case Test: Tests postgres.setting.update, redis.eviction_policy.update, container.restart."""
-    golden_files = [
-        "problems/case_11.json",  # postgres connection exhaustion
-        "problems/case_12.json",  # redis memory eviction
-        "problems/case_01.json"   # container restart/service recovery
+    """E2E Golden Case Test: Requires exact SANDBOX_VERIFIED outcome for Case 01, 11, 12."""
+    golden_specs = [
+        ("problems/case_01.json", "container.restart"),
+        ("problems/case_11.json", "postgres.setting.update"),
+        ("problems/case_12.json", "redis.eviction_policy.update")
     ]
 
-    for gf in golden_files:
+    for gf, expected_cap in golden_specs:
         if not os.path.exists(gf):
             pytest.skip(f"Golden test file missing: {gf}")
 
         res = run_single_problem(gf)
-        assert res["outcome"] in ALLOWED_OUTCOME_ENUM
+        assert res["outcome"] == "SANDBOX_VERIFIED", f"Golden case {gf} expected SANDBOX_VERIFIED, got {res['outcome']}"
         assert os.path.exists(res["json_report"])
         assert os.path.exists(res["md_report"])
 
@@ -37,9 +42,12 @@ def test_e2e_three_docker_golden_cases():
             data = json.load(f)
             assert data["incident_id"] == res["incident_id"]
             assert data["run_id"] == res["run_id"]
-            assert "phase_3" in data
-            assert "phase_4" in data
-            assert data["final_summary"]["outcome"] in ALLOWED_OUTCOME_ENUM
+            assert data["final_summary"]["outcome"] == "SANDBOX_VERIFIED"
+            
+            p4 = data.get("phase_4", {})
+            cap = p4.get("execution", {}).get("capability")
+            assert cap == expected_cap, f"Golden case {gf} expected capability {expected_cap}, got {cap}"
+
 
 
 def test_e2e_all_22_cases(tmp_path):

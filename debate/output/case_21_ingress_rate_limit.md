@@ -1,9 +1,9 @@
 # Multi-Agent Debate Execution Report: case_21_ingress_rate_limit
-**Timestamp:** `2026-09-02T19:14:42.001948`  
-**Total Pipeline Latency:** `13.6s`  
+**Timestamp:** `2026-09-02T19:49:41.190277`  
+**Total Pipeline Latency:** `2.99s`  
 **Consensus Score:** `0.0` (Threshold: `0.85`)  
-**Round 2 Debated:** `Yes`  
-**Calculated Confidence Score:** `0%`
+**Round 2 Debated:** `No (Single Pass Optimization)`  
+**Calculated Confidence Score:** `0.0`
 
 ---
 ## 1. Problem Statement
@@ -27,10 +27,10 @@ Analyze HTTP 429 rate limiting drops and output safe Nginx Ingress rate limit re
 ## 2. Performance & Timing Benchmarks
 | Pipeline Phase | Duration (seconds) |
 | :--- | :--- |
-| Round 1 Analysis | 4.79s |
-| Round 2 Iterative Debate | 2.9s |
-| Orchestrator Synthesis | 2.97s |
-| **Total Execution Latency** | **13.6s** |
+| Round 1 Analysis | 2.99s |
+| Round 2 Iterative Debate | 0.0s |
+| Orchestrator Synthesis | 0.0s |
+| **Total Execution Latency** | **2.99s** |
 
 ## 3. Round 1: Independent Agent Analysis
 ### RECOVERY ENGINEER (Optimist) (Latency: 0.0s)
@@ -63,20 +63,8 @@ Analyze HTTP 429 rate limiting drops and output safe Nginx Ingress rate limit re
 #### 3. ROOT CAUSE ANALYSIS
 
 
-### OPTIMIST_REVISED (Latency: 0.0s)
-#### 1. TRIAGE (0-5 minutes)
-
-
-#### 2. STABILIZATION (5-60 minutes)
-
-
-#### 3. ROOT CAUSE ANALYSIS
-
-
 ## 4. Orchestrator Synthesis & Final Recovery Plan
-**Synthesis Latency:** `2.97s` | **Confidence Score:** `0%`
-
-**Primary Component**: `unknown-service` | **Consensus Quality**: `HIGH`
+**Synthesis Latency:** `0.0s` | **Confidence Score:** `0.0`
 
 ### 1. Executive Summary & Root Cause
 

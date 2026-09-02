@@ -108,9 +108,10 @@ def build_action_proposed(
         if match:
             raw_target = match.group(1)
 
-    target_name = solution.get("primary_component") or solution.get("target_service") or raw_target or "target-service"
-    if not target_name or target_name.lower() in ["unknown", "unknown-service", "n/a", "none"]:
-        target_name = raw_target or "target-service"
+    target_name = solution.get("primary_component") or solution.get("target_service") or raw_target
+    if target_name and target_name.lower() in ["unknown", "unknown-service", "n/a", "none"]:
+        target_name = raw_target
+
 
     problem_text = result.get("problem") or solution.get("problem_summary") or result.get("normalized_incident") or "Incident reported"
     if isinstance(problem_text, dict):
@@ -234,17 +235,9 @@ def build_action_proposed(
                 "requires_human_approval": i.requires_human_approval
             } for i in env.intents
         ],
-        "human_summary": env.human_summary,
-        # Legacy compatibility payload dictionary
-        "payload": {
-            "confidence": conf_int,
-            "execution_tier": execution_tier,
-            "safety_violation": safety_violation,
-            "action_commands": [f"{i.intent_type}: {i.parameters}" for i in env.intents],
-            "consensus_rc": solution.get("consensus_rc", solution.get("final_rca", "")),
-            "primary_component": target_name
-        }
+        "human_summary": env.human_summary
     }
+
 
     dict_repr["payload_hash"] = compute_payload_hash(dict_repr)
     
@@ -265,8 +258,9 @@ class ActionPublisher:
 
     def publish_to_sandbox(self, message: dict) -> dict:
         """Writes formatted JSON atomically to the Arse_shadow sandbox inputs folder."""
-        sandbox_payload = format_for_sandbox(message)
+        sandbox_payload = message
         incident_id = sandbox_payload.get("incident_id", "unknown_incident")
+
         timestamp = int(time.time())
         filename = f"{incident_id}_{timestamp}.json"
         

@@ -72,9 +72,12 @@ def run_single_problem(problem_path: str, reports_base_dir: Optional[str] = None
     p3_res = dm.run(raw_problem)
 
     sol = p3_res.get("solution", {})
-    confidence_score = sol.get("confidence", p3_res.get("confidence_score", 75))
-    if isinstance(confidence_score, (int, float)) and confidence_score > 1.0:
-        confidence_score = confidence_score / 100.0
+    p3_status = p3_res.get("phase3_status", "COMPLETED")
+    conf_raw = p3_res.get("confidence_score")
+    if conf_raw is not None and isinstance(conf_raw, (int, float)):
+        confidence_score = float(conf_raw) / 100.0 if float(conf_raw) > 1.0 else float(conf_raw)
+    else:
+        confidence_score = 0.0
 
     p3_agents = p3_res.get("r1_detailed", {})
     p3_agents_formatted = {}
@@ -88,7 +91,7 @@ def run_single_problem(problem_path: str, reports_base_dir: Optional[str] = None
 
     p3_orch_meta = p3_res.get("orchestrator_meta", {})
     p3_context = {
-        "status": "COMPLETED",
+        "status": p3_status,
         "agents": p3_agents_formatted,
         "orchestrator": {
             "prompt": p3_orch_meta.get("prompt", ""),
@@ -97,7 +100,8 @@ def run_single_problem(problem_path: str, reports_base_dir: Optional[str] = None
         "confidence": {
             "score": round(confidence_score, 2),
             "reasoning": sol.get("human_recommendation") or sol.get("reasoning") or "Derived from debate evidence agreement",
-            "evidence_refs": sol.get("evidence_refs", [])
+            "evidence_refs": sol.get("evidence_refs", []),
+            "model_claimed_confidence": sol.get("model_claimed_confidence")
         },
         "selected_intent": sol.get("intent", {}),
         "duration_ms": int(p3_res.get("total_latency_seconds", 0) * 1000)
@@ -118,14 +122,43 @@ def run_single_problem(problem_path: str, reports_base_dir: Optional[str] = None
     }
 
     # 3. Run Phase 4 Shadow Sandbox
-    fault_spec = raw_problem.get("fault_spec")
-    p4_context = run_phase4_pipeline(envelope, fault_spec=fault_spec)
+    if p3_status == "PHASE3_FAILED":
+        p4_context = {
+            "status": "NOT_RUN",
+            "exact_input": envelope,
+            "target": envelope.get("target_ref", {}),
+            "attestation": {
+                "attempted": False,
+                "attested": False,
+                "reason": "Execution blocked before target attestation"
+            },
+            "before_observations": {},
+            "fault_setup": {"injected": False},
+            "execution": {
+                "capability": "NOT_RUN",
+                "parameters": {},
+                "result": {"success": False, "reason": "Phase 3 debate failed"},
+                "duration_ms": 0
+            },
+            "after_observations": {},
+            "verification": {"passed": False},
+            "rollback": {"attempted": False, "result": None},
+            "cleanup": {"completed": True},
+            "state_history": [
+                {"timestamp": datetime.now(timezone.utc).isoformat(), "state": "NOT_RUN", "reason_code": "PHASE3_FAILED", "message": "Phase 3 debate failed"}
+            ],
+            "duration_ms": 0
+        }
+    else:
+        fault_spec = raw_problem.get("fault_spec")
+        p4_context = run_phase4_pipeline(envelope, fault_spec=fault_spec)
 
     end_dt = datetime.now(timezone.utc)
     completed_at = end_dt.isoformat()
 
-    final_outcome = p4_context.get("status", "UNKNOWN")
+    final_outcome = p4_context.get("status", "PHASE3_FAILED" if p3_status == "PHASE3_FAILED" else "UNKNOWN")
     problem_resolved = final_outcome == "SANDBOX_VERIFIED"
+
 
     final_summary = {
         "outcome": final_outcome,

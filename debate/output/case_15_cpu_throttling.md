@@ -1,9 +1,9 @@
 # Multi-Agent Debate Execution Report: case_15_cpu_throttling
-**Timestamp:** `2026-09-02T19:13:20.269593`  
-**Total Pipeline Latency:** `13.34s`  
+**Timestamp:** `2026-09-02T19:49:22.601669`  
+**Total Pipeline Latency:** `3.05s`  
 **Consensus Score:** `0.0` (Threshold: `0.85`)  
-**Round 2 Debated:** `Yes`  
-**Calculated Confidence Score:** `0%`
+**Round 2 Debated:** `No (Single Pass Optimization)`  
+**Calculated Confidence Score:** `0.0`
 
 ---
 ## 1. Problem Statement
@@ -27,10 +27,10 @@ Analyze cgroup CPU quota throttling and recommend safe pod resource limit increa
 ## 2. Performance & Timing Benchmarks
 | Pipeline Phase | Duration (seconds) |
 | :--- | :--- |
-| Round 1 Analysis | 4.33s |
-| Round 2 Iterative Debate | 2.98s |
-| Orchestrator Synthesis | 2.97s |
-| **Total Execution Latency** | **13.34s** |
+| Round 1 Analysis | 3.05s |
+| Round 2 Iterative Debate | 0.0s |
+| Orchestrator Synthesis | 0.0s |
+| **Total Execution Latency** | **3.05s** |
 
 ## 3. Round 1: Independent Agent Analysis
 ### RECOVERY ENGINEER (Optimist) (Latency: 0.0s)
@@ -63,20 +63,8 @@ Analyze cgroup CPU quota throttling and recommend safe pod resource limit increa
 #### 3. ROOT CAUSE ANALYSIS
 
 
-### OPTIMIST_REVISED (Latency: 0.0s)
-#### 1. TRIAGE (0-5 minutes)
-
-
-#### 2. STABILIZATION (5-60 minutes)
-
-
-#### 3. ROOT CAUSE ANALYSIS
-
-
 ## 4. Orchestrator Synthesis & Final Recovery Plan
-**Synthesis Latency:** `2.97s` | **Confidence Score:** `0%`
-
-**Primary Component**: `unknown-service` | **Consensus Quality**: `HIGH`
+**Synthesis Latency:** `0.0s` | **Confidence Score:** `0.0`
 
 ### 1. Executive Summary & Root Cause
 

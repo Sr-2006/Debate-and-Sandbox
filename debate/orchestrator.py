@@ -47,15 +47,15 @@ class Orchestrator:
         return safe_parse_json(text, fallback={
             "problem_summary": text[:200] if text else "Incident reported",
             "root_cause": text[:200] if text else "Unknown cause",
-            "primary_component": "unknown-service",
+            "primary_component": None,
             "evidence_refs": [],
-            "confidence": 0.75,
+            "confidence": 0.0,
             "intent": {
                 "intent_type": "NO_SUPPORTED_ACTION",
                 "mode": "OBSERVE",
                 "target_ref": {
                     "kind": "container",
-                    "canonical_name": "unknown-service"
+                    "canonical_name": None
                 },
                 "parameters": {}
             },
@@ -67,14 +67,14 @@ class Orchestrator:
         capabilities = get_capabilities()
 
         # Normalize confidence to float 0.0-1.0
-        raw_conf = parsed.get("confidence", 0.75)
-        if isinstance(raw_conf, (int, float)):
+        raw_conf = parsed.get("confidence")
+        if raw_conf is not None and isinstance(raw_conf, (int, float)):
             conf_val = float(raw_conf)
             if conf_val > 1.0:
                 conf_val = conf_val / 100.0
             parsed["confidence"] = round(min(1.0, max(0.0, conf_val)), 2)
         else:
-            parsed["confidence"] = 0.75
+            parsed["confidence"] = None
 
         # Ensure evidence_refs is a list
         ev_refs = parsed.get("evidence_refs", [])
@@ -87,7 +87,6 @@ class Orchestrator:
         # Normalize intent structure
         intent = parsed.get("intent")
         if not isinstance(intent, dict):
-            # Try parsing intents array if present
             intents_arr = parsed.get("intents", [])
             if isinstance(intents_arr, list) and intents_arr and isinstance(intents_arr[0], dict):
                 intent = intents_arr[0]
@@ -99,8 +98,9 @@ class Orchestrator:
         if not isinstance(target_ref, dict):
             target_ref = {}
 
-        primary_component = parsed.get("primary_component") or target_ref.get("canonical_name") or "unknown-service"
+        primary_component = parsed.get("primary_component") or target_ref.get("canonical_name")
         target_kind = target_ref.get("kind") or "container"
+
 
         # Check if intent_type is in registered capabilities catalog
         if intent_type not in capabilities and intent_type != "NO_SUPPORTED_ACTION":

@@ -35,7 +35,7 @@ class LLMClient:
         full_prompt = f"[SYSTEM PROMPT]:\n{system_prompt}\n\n[USER PROMPT]:\n{user_prompt}"
 
         # Deterministic mock mode for reproducible tests (no Ollama needed).
-        if MOCK_MODE:
+        if MOCK_MODE or os.environ.get("DEBATE_MOCK_LLM") == "1":
             canned = self._mock_response(system_prompt, user_prompt)
             if canned is not None:
                 return {
@@ -45,6 +45,14 @@ class LLMClient:
                     "user_prompt": user_prompt,
                     "latency": 0.0
                 }
+            return {
+                "response": "{\"error\": \"All connection attempts failed\"}",
+                "prompt": full_prompt,
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+                "latency": 0.0
+            }
+
 
         payload = {
             "model": model or MODEL_NAME,
@@ -66,7 +74,8 @@ class LLMClient:
         last_err = None
         for attempt in range(3):
             try:
-                async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+                timeout_config = httpx.Timeout(2.0, connect=0.5)
+                async with httpx.AsyncClient(timeout=timeout_config) as client:
                     response = await client.post(OLLAMA_API_URL, json=payload)
                     response.raise_for_status()
                     res_data = response.json()
@@ -74,6 +83,7 @@ class LLMClient:
             except (httpx.ConnectError, httpx.ConnectTimeout) as e:
                 last_err = e
                 break
+
             except Exception as e:
                 last_err = e
                 if attempt < 2:

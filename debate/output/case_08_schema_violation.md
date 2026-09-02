@@ -1,9 +1,9 @@
 # Multi-Agent Debate Execution Report: case_08_schema_violation
-**Timestamp:** `2026-09-02T19:11:44.586458`  
-**Total Pipeline Latency:** `13.97s`  
-**Consensus Score:** `0.0` (Threshold: `0.85`)  
-**Round 2 Debated:** `Yes`  
-**Calculated Confidence Score:** `0%`
+**Timestamp:** `2026-09-02T19:49:01.297342`  
+**Total Pipeline Latency:** `2.9s`  
+**Consensus Score:** `0.9` (Threshold: `0.85`)  
+**Round 2 Debated:** `No (Single Pass Optimization)`  
+**Calculated Confidence Score:** `90.0`
 
 ---
 ## 1. Problem Statement
@@ -29,10 +29,10 @@ Provide a verbose detailed step-by-step reasoning explanation exceeding 30 words
 ## 2. Performance & Timing Benchmarks
 | Pipeline Phase | Duration (seconds) |
 | :--- | :--- |
-| Round 1 Analysis | 4.95s |
-| Round 2 Iterative Debate | 2.99s |
-| Orchestrator Synthesis | 3.0s |
-| **Total Execution Latency** | **13.97s** |
+| Round 1 Analysis | 2.9s |
+| Round 2 Iterative Debate | 0.0s |
+| Orchestrator Synthesis | 0.0s |
+| **Total Execution Latency** | **2.9s** |
 
 ## 3. Round 1: Independent Agent Analysis
 ### RECOVERY ENGINEER (Optimist) (Latency: 0.0s)
@@ -65,20 +65,10 @@ Provide a verbose detailed step-by-step reasoning explanation exceeding 30 words
 #### 3. ROOT CAUSE ANALYSIS
 
 
-### OPTIMIST_REVISED (Latency: 0.0s)
-#### 1. TRIAGE (0-5 minutes)
-
-
-#### 2. STABILIZATION (5-60 minutes)
-
-
-#### 3. ROOT CAUSE ANALYSIS
-
-
 ## 4. Orchestrator Synthesis & Final Recovery Plan
-**Synthesis Latency:** `3.0s` | **Confidence Score:** `0%`
+**Synthesis Latency:** `0.0s` | **Confidence Score:** `90.0`
 
-**Primary Component**: `unknown-service` | **Consensus Quality**: `HIGH`
+**Primary Component**: `postgres-db` | **Consensus Quality**: `HIGH`
 
 ### 1. Executive Summary & Root Cause
 

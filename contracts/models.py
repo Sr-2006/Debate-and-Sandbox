@@ -79,7 +79,7 @@ class ActionProposedV2Envelope:
         problem_summary: str,
         target_name: str,
         intents: List[Intent],
-        confidence: float = 0.85,
+        confidence: float = 0.0,
         correlation_id: Optional[str] = None,
         target_kind: str = "container",
         evidence_refs: Optional[List[str]] = None
@@ -89,9 +89,9 @@ class ActionProposedV2Envelope:
         corr_id = correlation_id or str(uuid.uuid4())
         event_id = f"evt_{uuid.uuid4().hex[:12]}"
         
-        target = TargetRef(kind=target_kind, canonical_name=target_name, shadow_alias=f"shadow-{target_name}")
+        target = TargetRef(kind=target_kind or "container", canonical_name=target_name, shadow_alias=f"shadow-{target_name}" if target_name else None)
         src = SourceRef(phase="phase3_debate", code_commit="2a3867c14af99d003ec8cecd044a01ef874346b8", model_name="qwen2.5-coder")
-        conf = Phase3Confidence(score=confidence)
+        conf = Phase3Confidence(score=confidence if confidence is not None else 0.0)
         
         # Aggregate evidence_refs from intents if not provided
         ev_refs = evidence_refs if evidence_refs is not None else []
@@ -99,8 +99,7 @@ class ActionProposedV2Envelope:
             for i in intents:
                 ev_refs.extend(i.evidence_refs)
             ev_refs = list(set(ev_refs))
-        if not ev_refs:
-            ev_refs = ["telemetry_log"]
+
 
         return cls(
             schema_version="2.0",
