@@ -218,11 +218,13 @@ def _sample_result(safety_violation: bool = False, confidence: int = 90) -> dict
         "solution": {
             "consensus_rc": "PostgreSQL connection exhaustion",
             "primary_component": "database",
+            "evidence": "log_01_postgres_conn_exhausted",
             "action_commands": ["systemctl restart postgresql"],
             "final_rca": "Connection pool saturated.",
             "consensus_quality": "HIGH",
             "scoring_metadata": {"veto_reason": None},
         },
+
         "confidence_score": confidence,
         "execution_tier": "TIER_1_AUTONOMOUS_EXECUTION",
         "safety_violation": safety_violation,

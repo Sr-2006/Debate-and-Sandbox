@@ -95,9 +95,21 @@ def build_action_proposed(
         execution_tier = "HUMAN_REVIEW"
 
     problem_text = result.get("problem", "")
-    target_name = solution.get("primary_component", "unknown-service")
-    evidence_anchors = solution.get("evidence_refs") or result.get("evidence_refs") or ["telemetry_log"]
+    target_name = solution.get("primary_component") or solution.get("target_service") or "unknown-service"
     
+    # Extract evidence anchors directly from solution
+    raw_ev = solution.get("evidence") or solution.get("evidence_refs") or result.get("evidence_refs")
+    if isinstance(raw_ev, str):
+        evidence_anchors = [raw_ev] if raw_ev.strip() else []
+    elif isinstance(raw_ev, list):
+        evidence_anchors = [str(x) for x in raw_ev if str(x).strip()]
+    else:
+        evidence_anchors = []
+
+    if not evidence_anchors:
+        evidence_anchors = [f"log_{incident_id}"]
+
+
     intents_raw = solution.get("intents", [])
     intents: List[Intent] = []
 
@@ -106,68 +118,56 @@ def build_action_proposed(
             if isinstance(item, dict):
                 intents.append(Intent(
                     intent_id=item.get("intent_id", f"int_{idx}_{uuid.uuid4().hex[:6]}"),
-                    intent_type=item.get("intent_type", "container.restart"),
-                    mode=item.get("mode", "MUTATE_REVERSIBLE"),
-                    target_ref=TargetRef(kind="container", canonical_name=target_name),
+                    intent_type=item.get("intent_type", "observe.logs.search"),
+                    mode=item.get("mode", "OBSERVE"),
+                    target_ref=TargetRef(kind=item.get("target_kind", "container"), canonical_name=target_name),
                     parameters=item.get("parameters", {}),
                     evidence_refs=item.get("evidence_refs", evidence_anchors),
-                    preconditions=item.get("preconditions", ["service_running"]),
-                    postconditions=item.get("postconditions", ["postcondition_passed"]),
+                    preconditions=item.get("preconditions", []),
+                    postconditions=item.get("postconditions", []),
                     timeout_seconds=item.get("timeout_seconds", 30),
                     max_attempts=item.get("max_attempts", 1),
                     risk_class=item.get("risk_class", "MEDIUM"),
                     requires_human_approval=item.get("requires_human_approval", safety_violation)
                 ))
-    
+
     if not intents:
+        cat_intent = solution.get("catalog_intent") or solution.get("intent")
         raw_cmds = solution.get("action_commands", [])
-        if not isinstance(raw_cmds, list):
+        if cat_intent:
+            raw_cmds = [cat_intent]
+        elif not isinstance(raw_cmds, list):
             raw_cmds = [str(raw_cmds)] if raw_cmds else []
 
-        if not raw_cmds:
+        for idx, cmd in enumerate(raw_cmds):
+            first_cmd = str(cmd).strip()
+            intent_type = first_cmd
+            params: Dict[str, Any] = {}
+            if ":" in first_cmd and ("{" in first_cmd or "}" in first_cmd or "'" in first_cmd or '"' in first_cmd):
+                parts = first_cmd.split(":", 1)
+                intent_type = parts[0].strip()
+                param_str = parts[1].strip().replace("'", '"')
+                try:
+                    params = json.loads(param_str)
+                except Exception:
+                    params = {}
+
+            mode = "OBSERVE" if intent_type.startswith("observe") or "inspect" in intent_type or intent_type.endswith(".diagnose") else "MUTATE_REVERSIBLE"
             intents.append(Intent(
-                intent_id=f"int_{uuid.uuid4().hex[:8]}",
-                intent_type="observe.logs.search",
-                mode="OBSERVE",
+                intent_id=f"int_{idx}_{uuid.uuid4().hex[:6]}",
+                intent_type=intent_type,
+                mode=mode,
                 target_ref=TargetRef(kind="container", canonical_name=target_name),
-                parameters={"query": "error"},
+                parameters=params,
                 evidence_refs=evidence_anchors,
                 preconditions=[],
-                postconditions=["logs_retrieved"],
+                postconditions=[],
                 timeout_seconds=30,
                 max_attempts=1,
-                risk_class="LOW",
-                requires_human_approval=False
+                risk_class="MEDIUM" if mode != "OBSERVE" else "LOW",
+                requires_human_approval=safety_violation
             ))
-        else:
-            for idx, cmd in enumerate(raw_cmds):
-                first_cmd = str(cmd).strip()
-                intent_type = first_cmd
-                params: Dict[str, Any] = {}
-                if ":" in first_cmd and ("{" in first_cmd or "}" in first_cmd or "'" in first_cmd or '"' in first_cmd):
-                    parts = first_cmd.split(":", 1)
-                    intent_type = parts[0].strip()
-                    param_str = parts[1].strip().replace("'", '"')
-                    try:
-                        params = json.loads(param_str)
-                    except Exception:
-                        params = {}
 
-                mode = "OBSERVE" if intent_type.startswith("observe") or "inspect" in intent_type else "MUTATE_REVERSIBLE"
-                intents.append(Intent(
-                    intent_id=f"int_{idx}_{uuid.uuid4().hex[:6]}",
-                    intent_type=intent_type,
-                    mode=mode,
-                    target_ref=TargetRef(kind="container", canonical_name=target_name),
-                    parameters=params,
-                    evidence_refs=evidence_anchors,
-                    preconditions=["service_running"],
-                    postconditions=["postcondition_passed"],
-                    timeout_seconds=30,
-                    max_attempts=1,
-                    risk_class="MEDIUM" if mode != "OBSERVE" else "LOW",
-                    requires_human_approval=safety_violation
-                ))
 
     env = ActionProposedV2Envelope.create_default(
         incident_id=incident_id,

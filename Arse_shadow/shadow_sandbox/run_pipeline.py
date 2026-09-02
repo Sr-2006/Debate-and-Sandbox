@@ -38,39 +38,70 @@ def process_incident(incident_file: str, settle_wait_s: float = 1.0) -> Optional
     incident_id = incident.get("incident_id", os.path.splitext(os.path.basename(incident_file))[0])
     problem_text = incident.get("problem", incident.get("problem_summary", ""))
 
-    # 1. Deduplication via SQLite Inbox Claim
+    # 1. State Machine initialization & Validation BEFORE Idempotency Claim
     payload_hash = incident.get("payload_hash") or compute_payload_hash(incident)
+    sm = ExecutionStateMachine(incident_id, payload_hash)
+
+    if not sm.transition_to("VALIDATING", ReasonCode.DIAGNOSED, "Validating payload format and schema v2"):
+        print(f"[ORCHESTRATOR] [{incident_id}] Invalid initial state transition to VALIDATING")
+        return None
+
+    # Check v2 envelope structure
+    v2_envelope = incident.get("raw_v2_envelope") or incident
+    if isinstance(v2_envelope, dict) and v2_envelope.get("schema_version") == "2.0":
+        from contracts.validation import validate_envelope
+        is_valid, errs, val_reason = validate_envelope(v2_envelope)
+        if not is_valid:
+            sm.transition_to(val_reason.value, val_reason, "; ".join(errs))
+            summary = sm.get_summary()
+            outcome = {
+                "incident_id": incident_id,
+                "run_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "gate_decision": val_reason.value,
+                "confidence_score": 0.0,
+                "human_intervention_required": True,
+                "message": f"Payload validation failed: {'; '.join(errs)}",
+                "fault_cleared": False,
+                "state_machine_history": summary["history"]
+            }
+            return generate_report(outcome)
+
+    # 2. Atomic Deduplication via SQLite Inbox Claim (AFTER validation passes)
     persistence = SandboxPersistence()
-    
     if not persistence.claim_payload(payload_hash, incident_id):
         print(f"[ORCHESTRATOR] [{incident_id}] Duplicate payload detected ({payload_hash[:8]}...). Skipping execution.")
+        sm.transition_to(TerminalState.DUPLICATE_IGNORED.value, ReasonCode.DUPLICATE_IGNORED, "Duplicate payload delivery ignored")
         duplicate_outcome = {
             "incident_id": incident_id,
             "run_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "gate_decision": "DUPLICATE_IGNORED",
             "human_intervention_required": False,
             "message": "Duplicate payload delivery ignored by inbox deduplication constraint.",
-            "fault_cleared": False
+            "fault_cleared": False,
+            "state_machine_history": sm.get_summary()["history"]
         }
         return generate_report(duplicate_outcome)
 
-    # 2. State Machine initialization
-    sm = ExecutionStateMachine(incident_id, payload_hash)
-    sm.transition_to("VALIDATING", ReasonCode.DIAGNOSED, "Validating payload format")
+    if not sm.transition_to("CLAIMED", ReasonCode.DIAGNOSED, "Payload claimed in inbox persistence"):
+        print(f"[ORCHESTRATOR] [{incident_id}] Invalid state transition to CLAIMED")
+        return None
 
-    # Extract proposals / actions
+    # Extract typed proposals & target_ref
     tech_sol = incident.get("orchestrator", {}).get("technical_solution", {})
     action_cmds = tech_sol.get("action_commands", [])
-    
+
     remediation_agent = BoundedRemediationAgent()
     proposal = remediation_agent.propose_action(problem_text, action_cmds)
 
-    # 3. Fault Setup Gate
-    sm.transition_to("SETTING_UP_FAULT", ReasonCode.DIAGNOSED, "Applying scenario fault primitive")
+    # Extract target service & fault setup
     fault_agent = FaultSelectionAgent()
     target = fault_agent.extract_target_service(problem_text)
     primitive, params = fault_agent.infer_fault_primitive(problem_text, "", target)
 
+    # 3. Attestation & Capability & Policy & Confidence & Execution via Harness (drives state path)
+    harness = ExecutionHarness(agent=remediation_agent, persistence=persistence)
+
+    # Run fault injection setup if primitive present
     fault_setup_ok = True
     fault_error_msg = ""
     if primitive:
@@ -84,6 +115,7 @@ def process_incident(incident_file: str, settle_wait_s: float = 1.0) -> Optional
             print(f"[ORCHESTRATOR] [{incident_id}] {fault_error_msg}")
 
     if not fault_setup_ok:
+        sm.transition_to("SETTING_UP_FAULT", ReasonCode.DIAGNOSED, "Applying fault primitive")
         sm.transition_to("FAULT_SETUP_FAILED", ReasonCode.FAULT_SETUP_FAILED, fault_error_msg)
         summary = sm.get_summary()
         outcome = {
@@ -100,8 +132,6 @@ def process_incident(incident_file: str, settle_wait_s: float = 1.0) -> Optional
         }
         return generate_report(outcome)
 
-    # 4. Run Execution Harness
-    harness = ExecutionHarness(agent=remediation_agent, persistence=persistence)
     exec_res = harness.run_proposal(proposal, problem_text, sm)
 
     # Clean up fault
@@ -111,8 +141,7 @@ def process_incident(incident_file: str, settle_wait_s: float = 1.0) -> Optional
         except Exception as e:
             pass
 
-
-    # 5. Write Report
+    # 4. Write Report
     summary = sm.get_summary()
     outcome = {
         "incident_id": incident_id,
@@ -130,6 +159,7 @@ def process_incident(incident_file: str, settle_wait_s: float = 1.0) -> Optional
     report_path = generate_report(outcome)
     print(f"[ORCHESTRATOR] [{incident_id}] Processed ({summary['terminal_state']}). Report: {report_path}")
     return report_path
+
 
 
 def run_batch_mode(input_dir: str, settle_wait_s: float = 1.0):

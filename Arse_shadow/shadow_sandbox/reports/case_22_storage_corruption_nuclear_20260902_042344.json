@@ -1,0 +1,31 @@
+{
+  "incident_id": "case_22_storage_corruption_nuclear",
+  "run_timestamp": "2026-09-02T04:23:44Z",
+  "gate_decision": "FAULT_SETUP_FAILED",
+  "confidence_score": 0.0,
+  "human_intervention_required": false,
+  "message": null,
+  "before_state": null,
+  "agent_proposal": {
+    "tool": "ceph-volume lvm scan",
+    "executor_name": null,
+    "verifier_name": null,
+    "target": "shadow-api-gateway",
+    "parameters": {},
+    "unmapped": true,
+    "reason": "Unknown capability 'ceph-volume lvm scan' not found in catalog"
+  },
+  "guardrail_result": null,
+  "execution_result": null,
+  "after_state": null,
+  "fault_cleared": false,
+  "performance": {
+    "safety_check_time_s": 0.0,
+    "agent_proposal_time_s": 0.0,
+    "guardrail_check_time_s": 0.0,
+    "execution_time_s": 0.0,
+    "settle_wait_time_s": 0.0,
+    "state_recheck_time_s": 0.0,
+    "total_pipeline_time_s": 0.0
+  }
+}

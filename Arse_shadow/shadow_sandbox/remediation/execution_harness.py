@@ -75,13 +75,24 @@ class ExecutionHarness:
         state_machine: ExecutionStateMachine
     ) -> Dict[str, Any]:
         """Runs a remediation proposal through attestation, policy, execution, verification, and rollback."""
-        target_name = proposal.get("target", self.agent.extract_target_service(problem_text))
-        tool_name = proposal.get("tool")
+        target_name = proposal.get("target") or proposal.get("target_ref", {}).get("canonical_name") or self.agent.extract_target_service(problem_text)
+        target_kind = proposal.get("target_kind") or proposal.get("target_ref", {}).get("kind") or "container"
+        tool_name = proposal.get("tool") or proposal.get("intent_type")
         parameters = proposal.get("parameters", {})
 
+        if not target_name or target_name.lower() in ["n/a", "unknown", "unknown-service", "none"]:
+            state_machine.transition_to("BLOCKED_TARGET_UNRESOLVED", ReasonCode.BLOCKED_TARGET_UNRESOLVED, "Target name unresolvable")
+            return {
+                "status": "blocked",
+                "terminal_state": TerminalState.BLOCKED_TARGET_UNRESOLVED.value,
+                "reason_code": ReasonCode.BLOCKED_TARGET_UNRESOLVED.value,
+                "detail": "Execution blocked: Target name is unresolvable",
+                "fault_cleared": False
+            }
+
         # 1. Attestation Check
-        state_machine.transition_to("ATTESTING", ReasonCode.DIAGNOSED, "Attesting shadow environment")
-        attest_ok, attest_reason, attest_msg = attest_shadow_environment(target_name)
+        state_machine.transition_to("ATTESTING", ReasonCode.DIAGNOSED, f"Attesting shadow environment for {target_kind} {target_name}")
+        attest_ok, attest_reason, attest_msg = attest_shadow_environment(target_name, target_kind=target_kind)
         if not attest_ok:
             state_machine.transition_to("ATTESTATION_FAILED", attest_reason, attest_msg)
             return {
@@ -95,10 +106,10 @@ class ExecutionHarness:
         # 2. Capability & Policy Evaluation
         state_machine.transition_to("RESOLVING_CAPABILITY", ReasonCode.DIAGNOSED, f"Resolving capability {tool_name}")
         state_machine.transition_to("CHECKING_POLICY", ReasonCode.DIAGNOSED, "Evaluating policy engine")
-        
+
         intent_dict = {"intent_type": tool_name, "requires_human_approval": proposal.get("requires_human_approval", False)}
-        target_dict = {"kind": "container", "canonical_name": target_name}
-        
+        target_dict = {"kind": target_kind, "canonical_name": target_name}
+
         policy_ok, policy_reason, policy_msg = self.policy_engine.evaluate_intent(intent_dict, target_dict)
         if not policy_ok:
             state_machine.transition_to(policy_reason.value, policy_reason, policy_msg)
@@ -114,11 +125,11 @@ class ExecutionHarness:
         state_machine.transition_to("CHECKING_CONFIDENCE", ReasonCode.DIAGNOSED, "Calculating multi-score confidence")
         conf_eval = self.confidence_analyzer.calculate_confidence(
             tool_name or "",
-            "container",
+            target_kind,
             phase3_confidence=proposal.get("confidence", 0.85),
             safety_violation=proposal.get("requires_human_approval", False)
         )
-        
+
         reason_code_str = conf_eval.get("reason_code")
         if reason_code_str == ReasonCode.INSUFFICIENT_HISTORY.value or not conf_eval.get("has_sufficient_history", True):
             state_machine.transition_to("INSUFFICIENT_HISTORY", ReasonCode.INSUFFICIENT_HISTORY, "Execution halted due to insufficient history")
@@ -141,10 +152,9 @@ class ExecutionHarness:
                 "confidence_eval": conf_eval
             }
 
-        # 4. Check preconditions
-        state_machine.transition_to("CHECKING_PRECONDITIONS", ReasonCode.DIAGNOSED, "Checking preconditions")
+        # 4. Check preconditions & capture target pre-state for rollback
+        state_machine.transition_to("CHECKING_PRECONDITIONS", ReasonCode.DIAGNOSED, "Checking preconditions and capturing target pre-state")
 
-        # 5. Execute typed operation
         executor_name = proposal.get("executor_name")
         if not executor_name or executor_name not in self.agent.executors:
             state_machine.transition_to("BLOCKED_UNKNOWN_CAPABILITY", ReasonCode.BLOCKED_UNKNOWN_CAPABILITY, f"Unregistered capability {tool_name}")
@@ -157,15 +167,29 @@ class ExecutionHarness:
             }
 
         executor = self.agent.executors[executor_name]
+
+        # Pre-state capture for reversible operations
+        pre_state_val = None
+        if tool_name == "postgres.setting.update":
+            setting = parameters.get("setting_name")
+            pre_res = executor._run_sql(target_name if target_name.startswith("shadow-") else f"shadow-{target_name}", f"SHOW {setting};", tool_name)
+            if pre_res.get("success"):
+                pre_state_val = pre_res.get("output", "").replace("SUCCESS: ", "").strip()
+        elif tool_name == "redis.eviction_policy.update":
+            pre_res = executor._run_redis(target_name if target_name.startswith("shadow-") else f"shadow-{target_name}", ["CONFIG", "GET", "maxmemory-policy"], tool_name)
+            if pre_res.get("success"):
+                pre_state_val = pre_res.get("output", "").replace("SUCCESS: ", "").strip()
+
+        # 5. Execute typed operation
         state_machine.transition_to("EXECUTING", ReasonCode.DIAGNOSED, f"Executing operation {tool_name}")
-        
+
         exec_start = time.time()
         exec_res = executor.execute(target_name, tool_name, parameters)
         exec_duration = time.time() - exec_start
 
         if not exec_res.get("success", False):
             state_machine.transition_to("EXECUTION_FAILED", ReasonCode.EXECUTION_FAILED, exec_res.get("output", "Execution failed"))
-            self.persistence.record_outcome(tool_name, "container", False, state_machine.incident_id, time.strftime("%Y-%m-%d %H:%M:%S"))
+            self.persistence.record_outcome(tool_name, target_kind, False, state_machine.incident_id, time.strftime("%Y-%m-%d %H:%M:%S"))
             return {
                 "status": "failed",
                 "terminal_state": TerminalState.EXECUTION_FAILED.value,
@@ -178,64 +202,57 @@ class ExecutionHarness:
         state_machine.transition_to("VERIFYING", ReasonCode.DIAGNOSED, "Verifying postconditions")
         verifier_name = proposal.get("verifier_name", "service_health")
         verifier = self.agent.verifiers.get(verifier_name, self.agent.verifiers["service_health"])
-        
+
         ver_res = verifier.verify(target_name, tool_name, parameters, exec_res)
-        
+
         if not ver_res.get("passed", False):
-            state_machine.transition_to("ROLLING_BACK", ReasonCode.VERIFICATION_FAILED_ROLLED_BACK, "Verifier failed; initiating rollback")
-            self.persistence.record_outcome(tool_name, "container", False, state_machine.incident_id, time.strftime("%Y-%m-%d %H:%M:%S"))
-            
-            # Execute real rollback operation
+            state_machine.transition_to("ROLLING_BACK", ReasonCode.VERIFICATION_FAILED_ROLLED_BACK, "Verifier failed; initiating rollback with captured pre-state")
+            self.persistence.record_outcome(tool_name, target_kind, False, state_machine.incident_id, time.strftime("%Y-%m-%d %H:%M:%S"))
+
+            # Execute real rollback using captured pre-state
             rollback_ok = False
             rollback_detail = ""
-            rollback_intent = proposal.get("rollback_intent")
-            
-            if rollback_intent and isinstance(rollback_intent, dict):
-                rb_tool = rollback_intent.get("intent_type")
-                rb_params = rollback_intent.get("parameters", {})
-                rb_res = executor.execute(target_name, rb_tool, rb_params)
+
+            if tool_name == "postgres.setting.update" and pre_state_val:
+                setting = parameters.get("setting_name")
+                rb_res = executor.execute(target_name, tool_name, {"setting_name": setting, "value": pre_state_val})
+                rollback_ok = rb_res.get("success", False)
+                rollback_detail = rb_res.get("output", "")
+            elif tool_name == "redis.eviction_policy.update" and pre_state_val:
+                rb_res = executor.execute(target_name, tool_name, {"policy": pre_state_val})
                 rollback_ok = rb_res.get("success", False)
                 rollback_detail = rb_res.get("output", "")
             else:
-                if tool_name == "postgres.setting.update":
-                    setting = parameters.get("setting_name")
-                    rb_res = executor.execute(target_name, tool_name, {"setting_name": setting, "value": "DEFAULT"})
-                    rollback_ok = rb_res.get("success", False)
-                    rollback_detail = rb_res.get("output", "")
-                elif tool_name == "redis.eviction_policy.update":
-                    rb_res = executor.execute(target_name, tool_name, {"policy": "noeviction"})
-                    rollback_ok = rb_res.get("success", False)
-                    rollback_detail = rb_res.get("output", "")
-                else:
-                    # Generic rollback attempt for container restart
-                    rb_res = executor.execute(target_name, "container.restart", parameters)
-                    rollback_ok = rb_res.get("success", False)
-                    rollback_detail = rb_res.get("output", "")
+                rb_res = executor.execute(target_name, "container.restart", parameters)
+                rollback_ok = rb_res.get("success", False)
+                rollback_detail = rb_res.get("output", "")
 
-            if rollback_ok:
-                state_machine.transition_to("VERIFICATION_FAILED_ROLLED_BACK", ReasonCode.VERIFICATION_FAILED_ROLLED_BACK, "Rollback executed successfully")
+            # Verify post-rollback state
+            rb_ver_res = verifier.verify(target_name, tool_name, parameters, {"success": rollback_ok})
+
+            if rollback_ok and rb_ver_res.get("passed", False):
+                state_machine.transition_to("VERIFICATION_FAILED_ROLLED_BACK", ReasonCode.VERIFICATION_FAILED_ROLLED_BACK, "Rollback executed and verified successfully")
                 return {
                     "status": "failed",
                     "terminal_state": TerminalState.VERIFICATION_FAILED_ROLLED_BACK.value,
                     "reason_code": ReasonCode.VERIFICATION_FAILED_ROLLED_BACK.value,
-                    "detail": f"Verification failed: {ver_res.get('reason')}. Rollback executed ({rollback_detail}).",
+                    "detail": f"Verification failed: {ver_res.get('reason')}. Rollback executed and verified ({rollback_detail}).",
                     "fault_cleared": False
                 }
             else:
-                state_machine.transition_to("VERIFICATION_FAILED_ROLLBACK_FAILED", ReasonCode.VERIFICATION_FAILED_ROLLBACK_FAILED, f"Rollback failed: {rollback_detail}")
+                state_machine.transition_to("VERIFICATION_FAILED_ROLLBACK_FAILED", ReasonCode.VERIFICATION_FAILED_ROLLBACK_FAILED, f"Rollback failed verification: {rollback_detail}")
                 return {
                     "status": "failed",
                     "terminal_state": TerminalState.VERIFICATION_FAILED_ROLLBACK_FAILED.value,
                     "reason_code": ReasonCode.VERIFICATION_FAILED_ROLLBACK_FAILED.value,
-                    "detail": f"Verification failed: {ver_res.get('reason')}. Rollback failed ({rollback_detail}).",
+                    "detail": f"Verification failed: {ver_res.get('reason')}. Rollback failed verification ({rollback_detail}).",
                     "fault_cleared": False
                 }
 
-
         # 7. Cleanup & Terminal Recovery
         state_machine.transition_to("CLEANING_UP", ReasonCode.VERIFIED_RECOVERED, "Cleaning up disposable state")
-        
-        if tool_name and tool_name.startswith("observe"):
+
+        if tool_name and (tool_name.startswith("observe") or tool_name.endswith(".diagnose")):
             terminal_state = TerminalState.DIAGNOSED.value
             fault_cleared = False
             reason = ReasonCode.DIAGNOSED.value
@@ -245,7 +262,7 @@ class ExecutionHarness:
             reason = ReasonCode.VERIFIED_RECOVERED.value
 
         state_machine.transition_to(terminal_state, ReasonCode(reason), "Execution and verification completed successfully")
-        self.persistence.record_outcome(tool_name, "container", True, state_machine.incident_id, time.strftime("%Y-%m-%d %H:%M:%S"))
+        self.persistence.record_outcome(tool_name, target_kind, True, state_machine.incident_id, time.strftime("%Y-%m-%d %H:%M:%S"))
 
         return {
             "status": "executed",
@@ -256,3 +273,4 @@ class ExecutionHarness:
             "fault_cleared": fault_cleared,
             "confidence_eval": conf_eval
         }
+
