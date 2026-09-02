@@ -1,0 +1,48 @@
+{
+  "system_context": {
+    "objective": "Perform automated Multi-Agent Root Cause Analysis (RCA) and recommend corrective actions.",
+    "environment": "Kubernetes (EKS), PostgreSQL WAL Storage Volume",
+    "current_health_score": 35,
+    "active_warnings": 18
+  },
+  "incident_event": {
+    "incident_id": "case_14_disk_pressure_wal",
+    "target_service": "postgres-db",
+    "priority_score": 90.0,
+    "severity": "CRITICAL",
+    "occurrence_count": 400
+  },
+  "infrastructure_topology": {
+    "role": "primary-db-storage",
+    "downstream_dependencies": [],
+    "exposed_ports": ["5432:5432"]
+  },
+  "service_health_status": {
+    "docker_status": "running",
+    "health_check": "degraded",
+    "dependency_states": {}
+  },
+  "telemetry_evidence": {
+    "log_cluster_template": "PANIC [postgres-db] could not write to log file pg_wal: No space left on device",
+    "log_samples": [
+      {
+        "timestamp": "2026-08-10T18:15:00.000Z",
+        "level": "PANIC",
+        "content": "[postgres-db] PANIC: could not write to file 'pg_wal/00000001000000A1000000F2': No space left on device (Disk 97%).",
+        "trace_id": "trace-disk-14",
+        "span_id": "span-wal-disk"
+      }
+    ],
+    "metrics_snapshot": [
+      {
+        "timestamp": "2026-08-10T18:15:00.000Z",
+        "disk_utilization_percent": 97.4,
+        "pg_wal_directory_size_gb": 45.0
+      }
+    ]
+  },
+  "injected_chaos_context": {
+    "active_infrastructure_mutations": "PostgreSQL WAL directory storage accumulation reaching 97% capacity."
+  },
+  "agent_instruction": "Analyze PostgreSQL WAL disk pressure and output non-destructive WAL archive truncation commands."
+}

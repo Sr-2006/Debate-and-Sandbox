@@ -1,0 +1,47 @@
+{
+  "system_context": {
+    "objective": "Perform automated Multi-Agent Root Cause Analysis (RCA) and recommend corrective actions.",
+    "environment": "Kubernetes (EKS), Node.js, Express",
+    "current_health_score": 65,
+    "active_warnings": 4
+  },
+  "incident_event": {
+    "incident_id": "case_09_borderline_route",
+    "target_service": "notification-service",
+    "priority_score": 70.0,
+    "severity": "MEDIUM",
+    "occurrence_count": 95
+  },
+  "infrastructure_topology": {
+    "role": "email-and-sms-notifier",
+    "downstream_dependencies": [],
+    "exposed_ports": ["8088:8088"]
+  },
+  "service_health_status": {
+    "docker_status": "running",
+    "health_check": "degraded",
+    "dependency_states": {}
+  },
+  "telemetry_evidence": {
+    "log_cluster_template": "WARN [notification-service] SMTP gateway socket timeout on port 587.",
+    "log_samples": [
+      {
+        "timestamp": "2026-08-10T17:40:00.000Z",
+        "level": "WARN",
+        "content": "[notification-service] ETIMEDOUT connection to smtp.provider.com:587.",
+        "trace_id": "trace-border-09",
+        "span_id": "span-smtp"
+      }
+    ],
+    "metrics_snapshot": [
+      {
+        "timestamp": "2026-08-10T17:40:00.000Z",
+        "smtp_timeout_count": 45
+      }
+    ]
+  },
+  "injected_chaos_context": {
+    "active_infrastructure_mutations": "Intermittent third-party SMTP provider timeout producing partial consensus among agents."
+  },
+  "agent_instruction": "Analyze notification service SMTP timeouts and output remediation steps."
+}

@@ -15,8 +15,16 @@ class PostgresExecutor(BaseExecutor):
     def execute(self, target: str, action: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         shadow_target = target if target.startswith("shadow-") else f"shadow-{target}"
 
-        if action == "postgres.setting.update":
+        if action == "postgres.setting.read":
             setting = parameters.get("setting_name")
+            if not setting:
+                return {"success": False, "target": shadow_target, "tool": action, "output": "ERROR: Missing setting_name"}
+            query = f"SHOW {setting};"
+            return self._run_sql(shadow_target, query, action)
+
+        elif action == "postgres.setting.update":
+            setting = parameters.get("setting_name")
+
             value = parameters.get("value")
             if not setting or value is None:
                 return {"success": False, "target": shadow_target, "tool": action, "output": "ERROR: Missing setting_name or value"}

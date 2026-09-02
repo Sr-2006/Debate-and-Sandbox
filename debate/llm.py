@@ -71,10 +71,14 @@ class LLMClient:
                     response.raise_for_status()
                     res_data = response.json()
                 break
+            except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+                last_err = e
+                break
             except Exception as e:
                 last_err = e
                 if attempt < 2:
                     await asyncio.sleep(2 ** attempt)
+
         if res_data is None:
             print(f"[LLM ERROR] Async HTTP connection failed after retries: {last_err}")
             return {

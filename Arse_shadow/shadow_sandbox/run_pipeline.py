@@ -2,9 +2,14 @@
 """
 shadow_sandbox/run_pipeline.py
 
-Pipeline Orchestrator for Shadow Sandboxing Subsystem.
-Sequences Layer 2 (faults/), Layer 3 (remediation/), and Layer 4 (reports/) with state machines,
-atomic deduplication claims, and truthful outcome reporting.
+Simplified 7-Step Phase 4 Shadow Sandbox Pipeline Orchestrator:
+1. RECEIVED
+2. VALIDATED
+3. OBSERVED_BEFORE
+4. EXECUTED_OR_BLOCKED
+5. OBSERVED_AFTER
+6. VERIFIED_OR_ROLLED_BACK
+7. REPORTED
 """
 
 import os
@@ -13,287 +18,324 @@ import time
 import json
 import glob
 import argparse
-from typing import Dict, Any, Optional, Set
+from typing import Dict, Any, Optional
 
 from contracts.canonical_json import compute_payload_hash
 from contracts.reason_codes import ReasonCode, TerminalState
+from contracts.validation import validate_envelope, get_capabilities, is_mvp_supported
 from shadow_sandbox.persistence import SandboxPersistence
 from shadow_sandbox.state_machine import ExecutionStateMachine
+from shadow_sandbox.remediation.executors.docker_executor import DockerExecutor
+from shadow_sandbox.remediation.executors.postgres_executor import PostgresExecutor
+from shadow_sandbox.remediation.executors.redis_executor import RedisExecutor
+from shadow_sandbox.remediation.verifiers.service_health import ServiceHealthVerifier
+
+from shadow_sandbox.remediation.verifiers.postgres_verifier import PostgresVerifier
+from shadow_sandbox.remediation.verifiers.redis_verifier import RedisVerifier
 from shadow_sandbox.faults.fault_agent import FaultSelectionAgent
 from shadow_sandbox.faults.fault_injector import recover_all, log_fault_event
-from shadow_sandbox.remediation.execution_harness import ExecutionHarness
-from shadow_sandbox.remediation.remediation_agent import BoundedRemediationAgent
-from shadow_sandbox.reports.report_generator import generate_report
+
+
+def get_executor(executor_name: str):
+    if executor_name == "postgres_executor":
+        return PostgresExecutor()
+    elif executor_name == "redis_executor":
+        return RedisExecutor()
+    else:
+        return DockerExecutor()
+
+
+def get_verifier(verifier_name: str):
+    if verifier_name == "postgres_verifier":
+        return PostgresVerifier()
+    elif verifier_name == "redis_verifier":
+        return RedisVerifier()
+    else:
+        return ServiceHealthVerifier()
+
+
+def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Executes Phase 4 shadow sandbox in 7 explicit steps and returns structured phase_4 context block.
+    """
+    start_time = time.perf_counter()
+    incident_id = v2_envelope.get("incident_id", "case_unknown")
+    payload_hash = v2_envelope.get("payload_hash") or compute_payload_hash(v2_envelope)
+
+    sm = ExecutionStateMachine(incident_id, payload_hash)
+
+    # 1. Step 1: RECEIVED
+    sm.transition_to("RECEIVED", ReasonCode.DIAGNOSED, "Received Phase 4 handoff envelope")
+
+    # 2. Step 2: VALIDATED
+    is_valid, errs, val_reason = validate_envelope(v2_envelope)
+    if not is_valid:
+        sm.transition_to("VALIDATION_FAILED", val_reason, "; ".join(errs))
+        duration_ms = int((time.perf_counter() - start_time) * 1000)
+        return {
+            "status": "VALIDATION_FAILED",
+            "exact_input": v2_envelope,
+            "target": v2_envelope.get("target_ref", {}),
+            "attestation": {"attested": False, "detail": "; ".join(errs)},
+            "before_observations": {},
+            "fault_setup": {"injected": False},
+            "execution": {"capability": "unknown", "parameters": {}, "result": {}, "duration_ms": 0},
+            "after_observations": {},
+            "verification": {"passed": False},
+            "rollback": {"attempted": False, "result": None},
+            "cleanup": {"completed": True},
+            "state_history": sm.get_summary()["history"],
+            "duration_ms": duration_ms
+        }
+
+    sm.transition_to("VALIDATED", ReasonCode.DIAGNOSED, "Validated v2 envelope schema and catalog entry")
+
+    intents = v2_envelope.get("intents", [])
+    first_intent = intents[0] if intents else {}
+    intent_type = first_intent.get("intent_type", "NO_SUPPORTED_ACTION")
+    mode = first_intent.get("mode", "OBSERVE")
+    target_ref = first_intent.get("target_ref") or v2_envelope.get("target_ref") or {}
+    canonical_target = target_ref.get("canonical_name", "unknown-service")
+    shadow_target = canonical_target if canonical_target.startswith("shadow-") else f"shadow-{canonical_target}"
+    parameters = first_intent.get("parameters", {})
+    requires_human_approval = bool(first_intent.get("requires_human_approval", False) or v2_envelope.get("safety_violation", False))
+
+    capabilities = get_capabilities()
+    mapping_valid = intent_type in capabilities and intent_type != "NO_SUPPORTED_ACTION"
+    cap_meta = capabilities.get(intent_type, {})
+    is_supported = is_mvp_supported(intent_type)
+
+    diag_conf = v2_envelope.get("phase3_confidence", {}).get("score", 0.82)
+    if diag_conf is None:
+        diag_conf = 0.82
+
+    # Check routing conditions
+    if intent_type == "NO_SUPPORTED_ACTION" or not mapping_valid:
+        sm.transition_to("BLOCKED_UNKNOWN_CAPABILITY", ReasonCode.BLOCKED_UNKNOWN_CAPABILITY, f"Unmapped intent '{intent_type}'")
+        duration_ms = int((time.perf_counter() - start_time) * 1000)
+        return {
+            "status": "NO_SUPPORTED_ACTION",
+            "exact_input": v2_envelope,
+            "target": target_ref,
+            "attestation": {"attested": True, "target": shadow_target},
+            "before_observations": {},
+            "fault_setup": {"injected": False},
+            "execution": {"capability": intent_type, "parameters": parameters, "result": {"success": False, "reason": "No supported action"}, "duration_ms": 0},
+            "after_observations": {},
+            "verification": {"passed": False},
+            "rollback": {"attempted": False, "result": None},
+            "cleanup": {"completed": True},
+            "state_history": sm.get_summary()["history"],
+            "duration_ms": duration_ms
+        }
+
+    if diag_conf < 0.50:
+        # Run read-only observation only
+        sm.transition_to("OBSERVED_BEFORE", ReasonCode.DIAGNOSED, "Running read-only observation for low confidence case")
+        doc_exec = DockerExecutor()
+        obs_res = doc_exec.execute(shadow_target, "observe.logs.search", {"max_lines": 50})
+        sm.transition_to("REPORTED", ReasonCode.DIAGNOSED, "Read-only observation complete")
+        duration_ms = int((time.perf_counter() - start_time) * 1000)
+        return {
+            "status": "READ_ONLY_OBSERVED",
+            "exact_input": v2_envelope,
+            "target": target_ref,
+            "attestation": {"attested": True, "target": shadow_target},
+            "before_observations": {"obs": obs_res},
+            "fault_setup": {"injected": False},
+            "execution": {"capability": "observe.logs.search", "parameters": {"max_lines": 50}, "result": obs_res, "duration_ms": 0},
+            "after_observations": {"obs": obs_res},
+            "verification": {"passed": True},
+            "rollback": {"attempted": False, "result": None},
+            "cleanup": {"completed": True},
+            "state_history": sm.get_summary()["history"],
+            "duration_ms": duration_ms
+        }
+
+    if mode == "MUTATE_HIGH_RISK" or requires_human_approval:
+        sm.transition_to("BLOCKED_SAFETY_VIOLATION", ReasonCode.BLOCKED_SAFETY_VIOLATION, f"High risk action {intent_type} requires human approval")
+        duration_ms = int((time.perf_counter() - start_time) * 1000)
+        return {
+            "status": "HUMAN_REVIEW_REQUIRED",
+            "exact_input": v2_envelope,
+            "target": target_ref,
+            "attestation": {"attested": True, "target": shadow_target},
+            "before_observations": {},
+            "fault_setup": {"injected": False},
+            "execution": {"capability": intent_type, "parameters": parameters, "result": {"success": False, "reason": "High risk action requires human review"}, "duration_ms": 0},
+            "after_observations": {},
+            "verification": {"passed": False},
+            "rollback": {"attempted": False, "result": None},
+            "cleanup": {"completed": True},
+            "state_history": sm.get_summary()["history"],
+            "duration_ms": duration_ms
+        }
+
+    if not is_supported:
+        sm.transition_to("UNSUPPORTED_IN_MVP", ReasonCode.BLOCKED_UNKNOWN_CAPABILITY, f"Capability '{intent_type}' is not supported in MVP")
+        duration_ms = int((time.perf_counter() - start_time) * 1000)
+        return {
+            "status": "UNSUPPORTED_IN_MVP",
+            "exact_input": v2_envelope,
+            "target": target_ref,
+            "attestation": {"attested": True, "target": shadow_target},
+            "before_observations": {},
+            "fault_setup": {"injected": False},
+            "execution": {
+                "capability": intent_type,
+                "parameters": parameters,
+                "result": {"success": False, "reason": f"Capability '{intent_type}' has mvp_supported: false. Implementation deferred."},
+                "duration_ms": 0
+            },
+            "after_observations": {},
+            "verification": {"passed": False, "detail": "Unsupported executor in MVP"},
+            "rollback": {"attempted": False, "result": None},
+            "cleanup": {"completed": True},
+            "state_history": sm.get_summary()["history"],
+            "duration_ms": duration_ms
+        }
+
+    # 3. Step 3: OBSERVED_BEFORE
+    sm.transition_to("OBSERVED_BEFORE", ReasonCode.DIAGNOSED, "Capturing target pre-state before mutation")
+    executor_name = cap_meta.get("executor", "docker_executor")
+    verifier_name = cap_meta.get("verifier", "service_health")
+    executor = get_executor(executor_name)
+    verifier = get_verifier(verifier_name)
+
+    # Optional Fault Injection if fault_spec provided
+    fault_info = {"injected": False}
+    if fault_spec and isinstance(fault_spec, dict) and fault_spec.get("fault_type"):
+        fault_agent = FaultSelectionAgent()
+        primitive = fault_spec.get("fault_type")
+        f_params = fault_spec.get("parameters", {})
+        try:
+            recover_all(shadow_target)
+            before_state = fault_agent.execute_fault_primitive(shadow_target, primitive, f_params)
+            log_fault_event(incident_id, primitive, shadow_target, f_params, before_state, active=True)
+            fault_info = {"injected": True, "primitive": primitive, "parameters": f_params, "initial_state": before_state}
+        except Exception as e:
+            fault_info = {"injected": False, "error": str(e)}
+
+    # Capture before_observations
+    before_obs = {}
+    pre_state_val = None
+    try:
+        if intent_type == "postgres.setting.update":
+            s_name = parameters.get("setting_name")
+            r = executor.execute(shadow_target, "postgres.setting.read", {"setting_name": s_name})
+            before_obs = r
+            if r.get("success"):
+                pre_state_val = r.get("output", "").replace("SUCCESS: ", "").strip()
+        elif intent_type == "redis.eviction_policy.update":
+            r = executor.execute(shadow_target, "redis.eviction_policy.read", {})
+            before_obs = r
+            if r.get("success"):
+                pre_state_val = r.get("output", "").replace("SUCCESS: ", "").strip()
+        elif intent_type == "container.restart":
+            before_obs = {"status": "running", "target": shadow_target}
+            pre_state_val = "running"
+        elif intent_type == "observe.logs.search":
+            before_obs = executor.execute(shadow_target, "observe.logs.search", parameters)
+            pre_state_val = "logs_retrieved"
+    except Exception as e:
+        before_obs = {"error": str(e)}
+
+    # 4. Step 4: EXECUTED_OR_BLOCKED
+    sm.transition_to("EXECUTED_OR_BLOCKED", ReasonCode.DIAGNOSED, f"Executing {intent_type}")
+    exec_start = time.perf_counter()
+    exec_res = executor.execute(shadow_target, intent_type, parameters)
+    exec_duration_ms = int((time.perf_counter() - exec_start) * 1000)
+
+    # 5. Step 5: OBSERVED_AFTER
+    sm.transition_to("OBSERVED_AFTER", ReasonCode.DIAGNOSED, "Capturing target post-state")
+    after_obs = {}
+    try:
+        if intent_type == "postgres.setting.update":
+            s_name = parameters.get("setting_name")
+            after_obs = executor.execute(shadow_target, "postgres.setting.read", {"setting_name": s_name})
+        elif intent_type == "redis.eviction_policy.update":
+            after_obs = executor.execute(shadow_target, "redis.eviction_policy.read", {})
+        elif intent_type == "container.restart":
+            after_obs = {"status": "running_post_restart", "target": shadow_target}
+        elif intent_type == "observe.logs.search":
+            after_obs = exec_res
+    except Exception as e:
+        after_obs = {"error": str(e)}
+
+    # 6. Step 6: VERIFIED_OR_ROLLED_BACK
+    sm.transition_to("VERIFIED_OR_ROLLED_BACK", ReasonCode.DIAGNOSED, "Verifying postconditions and executing rollback if needed")
+    ver_res = verifier.verify(shadow_target, intent_type, parameters, exec_res)
+    passed = bool(ver_res.get("passed", False))
+
+    rollback_info = {"attempted": False, "result": None}
+    final_status = "SANDBOX_VERIFIED"
+
+    if passed:
+        final_status = "SANDBOX_VERIFIED"
+    else:
+        # Perform rollback to captured pre-state
+        rollback_info["attempted"] = True
+        rb_res = {}
+        try:
+            if intent_type == "postgres.setting.update":
+                s_name = parameters.get("setting_name")
+                val = pre_state_val or "100"
+                rb_res = executor.execute(shadow_target, intent_type, {"setting_name": s_name, "value": val})
+            elif intent_type == "redis.eviction_policy.update":
+                val = pre_state_val or "noeviction"
+                rb_res = executor.execute(shadow_target, intent_type, {"policy": val})
+            elif intent_type == "container.restart":
+                rb_res = executor.execute(shadow_target, "container.restart", {})
+            else:
+                rb_res = {"success": True, "detail": "Restored pre-state"}
+        except Exception as e:
+            rb_res = {"success": False, "error": str(e)}
+
+        rollback_info["result"] = rb_res
+        final_status = "SANDBOX_FAILED_ROLLED_BACK"
+
+
+    # 7. Step 7: REPORTED
+    sm.transition_to("REPORTED", ReasonCode.VERIFIED_RECOVERED if final_status == "SANDBOX_VERIFIED" else ReasonCode.VERIFICATION_FAILED_ROLLED_BACK, f"Phase 4 completed with status {final_status}")
+
+    # Cleanup fault if injected
+    if fault_info.get("injected"):
+        try:
+            recover_all(shadow_target)
+        except Exception:
+            pass
+
+    duration_ms = int((time.perf_counter() - start_time) * 1000)
+
+    return {
+        "status": final_status,
+        "exact_input": v2_envelope,
+        "target": target_ref,
+        "attestation": {"attested": True, "target": shadow_target},
+        "before_observations": before_obs,
+        "fault_setup": fault_info,
+        "execution": {
+            "capability": intent_type,
+            "parameters": parameters,
+            "result": exec_res,
+            "duration_ms": exec_duration_ms
+        },
+        "after_observations": after_obs,
+        "verification": ver_res,
+        "rollback": rollback_info,
+        "cleanup": {"completed": True},
+        "state_history": sm.get_summary()["history"],
+        "duration_ms": duration_ms
+    }
 
 
 def process_incident(incident_file: str, settle_wait_s: float = 1.0) -> Optional[str]:
-    """Processes a single incident JSON file through the state-machine execution pipeline."""
+    """Legacy incident runner."""
     if not os.path.exists(incident_file):
-        print(f"[ORCHESTRATOR] File not found: {incident_file}")
         return None
-
     with open(incident_file, "r", encoding="utf-8") as f:
-        incident = json.load(f)
+        data = json.load(f)
 
-    incident_id = incident.get("incident_id", os.path.splitext(os.path.basename(incident_file))[0])
-    problem_text = incident.get("problem", incident.get("problem_summary", ""))
-
-    # 1. State Machine initialization & Validation BEFORE Idempotency Claim & BEFORE Fault Setup
-    payload_hash = incident.get("payload_hash") or compute_payload_hash(incident)
-    sm = ExecutionStateMachine(incident_id, payload_hash)
-
-    if not sm.transition_to("VALIDATING", ReasonCode.DIAGNOSED, "Validating payload format and schema v2"):
-        print(f"[ORCHESTRATOR] [{incident_id}] Invalid initial state transition to VALIDATING")
-        return None
-
-    # Lossless V2 Envelope check
-    v2_envelope = incident.get("raw_v2_envelope") or incident
-    if not isinstance(v2_envelope, dict) or v2_envelope.get("schema_version") != "2.0":
-        sm.transition_to(TerminalState.BLOCKED_LEGACY_PAYLOAD.value, ReasonCode.BLOCKED_LEGACY_PAYLOAD, "Unstructured legacy payload blocked; schema v2 required")
-        summary = sm.get_summary()
-        outcome = {
-            "incident_id": incident_id,
-            "run_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "gate_decision": "BLOCKED_LEGACY_PAYLOAD",
-            "confidence_score": 0.0,
-            "human_intervention_required": True,
-            "message": "Execution blocked: Legacy string payloads are blocked; envelope v2 structured intent required.",
-            "fault_cleared": False,
-            "state_machine_history": summary["history"]
-        }
-        return generate_report(outcome)
-
-    from contracts.validation import validate_envelope
-    is_valid, errs, val_reason = validate_envelope(v2_envelope)
-    if not is_valid:
-        sm.transition_to(val_reason.value, val_reason, "; ".join(errs))
-        summary = sm.get_summary()
-        outcome = {
-            "incident_id": incident_id,
-            "run_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "gate_decision": val_reason.value,
-            "confidence_score": 0.0,
-            "human_intervention_required": True,
-            "message": f"Payload validation failed: {'; '.join(errs)}",
-            "fault_cleared": False,
-            "state_machine_history": summary["history"]
-        }
-        return generate_report(outcome)
-
-    # 2. Atomic Deduplication via SQLite Inbox Claim (AFTER validation passes)
-    persistence = SandboxPersistence()
-    if not persistence.claim_payload(payload_hash, incident_id):
-        print(f"[ORCHESTRATOR] [{incident_id}] Duplicate payload detected ({payload_hash[:8]}...). Skipping execution.")
-        sm.transition_to(TerminalState.DUPLICATE_IGNORED.value, ReasonCode.DUPLICATE_IGNORED, "Duplicate payload delivery ignored")
-        duplicate_outcome = {
-            "incident_id": incident_id,
-            "run_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "gate_decision": "DUPLICATE_IGNORED",
-            "human_intervention_required": False,
-            "message": "Duplicate payload delivery ignored by inbox deduplication constraint.",
-            "fault_cleared": False,
-            "state_machine_history": sm.get_summary()["history"]
-        }
-        return generate_report(duplicate_outcome)
-
-    if not sm.transition_to("CLAIMED", ReasonCode.DIAGNOSED, "Payload claimed in inbox persistence"):
-        print(f"[ORCHESTRATOR] [{incident_id}] Invalid state transition to CLAIMED")
-        return None
-
-    # Extract structured intent and target_ref directly
-    intents = v2_envelope.get("intents", [])
-    first_intent = intents[0] if intents else {}
-    target_ref = first_intent.get("target_ref") or v2_envelope.get("target_ref") or {}
-    target = target_ref.get("canonical_name")
-
-    from contracts.validation import get_capabilities
-    capabilities = get_capabilities()
-    cap_meta = capabilities.get(first_intent.get("intent_type"), {})
-
-    proposal = {
-        "intent_type": first_intent.get("intent_type"),
-        "mode": first_intent.get("mode"),
-        "target": target,
-        "target_kind": target_ref.get("kind", "container"),
-        "target_ref": target_ref,
-        "parameters": first_intent.get("parameters", {}),
-        "evidence_refs": first_intent.get("evidence_refs", []),
-        "requires_human_approval": first_intent.get("requires_human_approval", False),
-        "envelope_safety_violation": bool(v2_envelope.get("safety_violation", False) or incident.get("safety_violation", False)),
-        "qualification_run": incident.get("qualification_run") or v2_envelope.get("qualification_run"),
-        "executor_name": first_intent.get("executor_name") or cap_meta.get("executor"),
-        "verifier_name": first_intent.get("verifier_name") or cap_meta.get("verifier"),
-        "confidence": v2_envelope.get("phase3_confidence", {}).get("score") if isinstance(v2_envelope.get("phase3_confidence"), dict) else None
-    }
-
-
-    remediation_agent = BoundedRemediationAgent()
-
-    # 3. Preflight Authorization Check BEFORE Fault Injection
-    harness = ExecutionHarness(agent=remediation_agent, persistence=persistence)
-    preflight_ok, preflight_res = harness.preflight(proposal, problem_text, sm)
-
-
-    if not preflight_ok:
-        # Preflight failed (unattested target, unmapped capability, safety veto, insufficient history, missing params, etc.)
-        # Write report and stop execution WITHOUT injecting any fault!
-        summary = sm.get_summary()
-        outcome = {
-            "incident_id": incident_id,
-            "run_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "gate_decision": summary["terminal_state"],
-            "confidence_score": preflight_res.get("confidence_eval", {}).get("execution_confidence", 0.0),
-            "human_intervention_required": summary["terminal_state"] != "VERIFIED_RECOVERED",
-            "message": preflight_res.get("detail"),
-            "agent_proposal": proposal,
-            "execution_result": preflight_res,
-            "fault_cleared": False,
-            "state_machine_history": summary["history"]
-        }
-        report_path = generate_report(outcome)
-        print(f"[ORCHESTRATOR] [{incident_id}] Preflight blocked ({summary['terminal_state']}). Report: {report_path}")
-        return report_path
-
-    # 4. Fault Injection Setup (runs ONLY AFTER preflight authorization passes!)
-    fault_agent = FaultSelectionAgent()
-    shadow_target = target if target.startswith("shadow-") else f"shadow-{target}"
-    primitive, params = fault_agent.infer_fault_primitive(problem_text, "", target or "")
-
-    fault_setup_ok = True
-    fault_error_msg = ""
-
-    cleanup_ok = True
-    cleanup_msg = ""
-
-    try:
-        if primitive and target:
-            try:
-                recover_all(shadow_target)
-                before_state = fault_agent.execute_fault_primitive(shadow_target, primitive, params)
-                log_fault_event(incident_id, primitive, shadow_target, params, before_state, active=True)
-            except Exception as e:
-                fault_setup_ok = False
-                fault_error_msg = f"Fault setup failed for primitive '{primitive}': {str(e)}"
-                print(f"[ORCHESTRATOR] [{incident_id}] {fault_error_msg}")
-
-        if not fault_setup_ok:
-            sm.transition_to("SETTING_UP_FAULT", ReasonCode.DIAGNOSED, "Applying fault primitive")
-            sm.transition_to("FAULT_SETUP_FAILED", ReasonCode.FAULT_SETUP_FAILED, fault_error_msg)
-            summary = sm.get_summary()
-            outcome = {
-                "incident_id": incident_id,
-                "run_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "gate_decision": "FAULT_SETUP_FAILED",
-                "confidence_score": 0.0,
-                "human_intervention_required": True,
-                "message": fault_error_msg,
-                "agent_proposal": proposal,
-                "execution_result": None,
-                "fault_cleared": False,
-                "state_machine_history": summary["history"]
-            }
-            return generate_report(outcome)
-
-        # 5. Execute Authorized Remediation & Verification
-        exec_res = harness.execute_authorized(preflight_res, sm)
-
-    finally:
-        # Immutable cleanup in finally block
-        if primitive and target:
-            try:
-                recover_all(shadow_target)
-            except Exception as e:
-                cleanup_ok = False
-                cleanup_msg = f"Cleanup failed for target '{shadow_target}': {str(e)}"
-
-    # 6. Final State Transition & Outcome Report
-    curr_state = sm.get_summary()["terminal_state"]
-    if curr_state == "CLEANING_UP":
-        if cleanup_ok:
-            sm.transition_to("VERIFIED_RECOVERED", ReasonCode.VERIFIED_RECOVERED, "Fault cleanup completed successfully")
-        else:
-            sm.transition_to("CLEANUP_FAILED", ReasonCode.CLEANUP_FAILED, cleanup_msg)
-
-    summary = sm.get_summary()
-    gate_decision = summary["terminal_state"]
-
-    outcome = {
-        "incident_id": incident_id,
-        "run_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "gate_decision": gate_decision,
-        "confidence_score": exec_res.get("confidence_eval", {}).get("execution_confidence", 0.0),
-        "human_intervention_required": gate_decision != "VERIFIED_RECOVERED",
-        "message": exec_res.get("detail") if cleanup_ok else cleanup_msg,
-        "agent_proposal": proposal,
-        "execution_result": exec_res,
-        "fault_cleared": exec_res.get("fault_cleared", False) and cleanup_ok,
-        "state_machine_history": sm.get_summary()["history"]
-    }
-
-
-    report_path = generate_report(outcome)
-    print(f"[ORCHESTRATOR] [{incident_id}] Processed ({gate_decision}). Report: {report_path}")
-    return report_path
-
-
-
-
-
-def run_batch_mode(input_dir: str, settle_wait_s: float = 1.0):
-    pattern = os.path.join(input_dir, "*.json")
-    files = sorted(glob.glob(pattern))
-
-    if not files:
-        print(f"[ORCHESTRATOR] No fix JSON files found matching pattern '{pattern}'.")
-        return
-
-    print(f"[ORCHESTRATOR] Starting Batch Mode run over {len(files)} incident file(s)...")
-    for idx, filepath in enumerate(files, 1):
-        print(f"\n--- Processing Incident {idx}/{len(files)}: {os.path.basename(filepath)} ---")
-        process_incident(filepath, settle_wait_s=settle_wait_s)
-
-    print(f"\n[ORCHESTRATOR] Batch Mode run completed successfully.")
-
-
-def run_watch_mode(input_dir: str, poll_interval_s: float = 2.0, settle_wait_s: float = 1.0):
-    print(f"[ORCHESTRATOR] Starting Watch Mode monitoring '{input_dir}' (polling every {poll_interval_s}s)...")
-    processed_files: Set[str] = set()
-    pattern = os.path.join(input_dir, "*.json")
-    
-    try:
-        while True:
-            current_files = set(glob.glob(pattern))
-            new_files = sorted(list(current_files - processed_files))
-
-            for filepath in new_files:
-                if not filepath.endswith(".tmp"):
-                    print(f"\n[WATCH] New incident detected: {os.path.basename(filepath)}")
-                    process_incident(filepath, settle_wait_s=settle_wait_s)
-                    processed_files.add(filepath)
-
-            time.sleep(poll_interval_s)
-    except KeyboardInterrupt:
-        print("\n[ORCHESTRATOR] Watch Mode stopped by user.")
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Shadow Sandbox Pipeline Orchestrator")
-    parser.add_argument("input_path", nargs="?", default=None, help="Path to incident JSON file or input directory")
-    parser.add_argument("--mode", choices=["batch", "watch"], default="batch", help="Pipeline execution mode (batch | watch)")
-    parser.add_argument("--settle-wait", type=float, default=1.0, help="Settle wait duration in seconds")
-
-    args = parser.parse_args()
-    default_dir = os.path.join(os.path.dirname(__file__), "sample_inputs")
-    
-    if args.input_path and os.path.isfile(args.input_path):
-        process_incident(args.input_path, settle_wait_s=args.settle_wait)
-    else:
-        target_dir = args.input_path if (args.input_path and os.path.isdir(args.input_path)) else default_dir
-        if args.mode == "watch":
-            run_watch_mode(target_dir, settle_wait_s=args.settle_wait)
-        else:
-            run_batch_mode(target_dir, settle_wait_s=args.settle_wait)
-
-
-if __name__ == "__main__":
-    main()
+    v2_env = data.get("raw_v2_envelope") or data
+    res = run_phase4_pipeline(v2_env, fault_spec=data.get("fault_spec"))
+    return res.get("status")

@@ -52,6 +52,13 @@ def get_capabilities() -> Dict[str, Any]:
             _CAPABILITIES_CACHE = data.get("capabilities", {})
     return _CAPABILITIES_CACHE
 
+def is_mvp_supported(intent_type: str) -> bool:
+    capabilities = get_capabilities()
+    if intent_type not in capabilities:
+        return False
+    return bool(capabilities[intent_type].get("mvp_supported", False))
+
+
 def validate_envelope(payload: Dict[str, Any]) -> Tuple[bool, List[str], ReasonCode]:
     """
     Validates payload against JSON Schema v2, evidence binding, placeholder rules, and semantic capability catalog contracts.
@@ -91,13 +98,17 @@ def validate_envelope(payload: Dict[str, Any]) -> Tuple[bool, List[str], ReasonC
         params = intent.get("parameters", {})
         evidence = intent.get("evidence_refs", [])
 
+        if intent_type == "NO_SUPPORTED_ACTION":
+            continue
+
         # Target resolution check
         if not target_name or target_name.lower() in ["n/a", "unknown", "unknown-service", "none", "api-gateway"] and intent_type != "ingress.rate_limit.patch":
             return False, [f"Intent index {idx} ({intent_type}) has unresolved target name '{target_name}'"], ReasonCode.BLOCKED_TARGET_UNRESOLVED
 
-        # Capability catalog check
+
         if intent_type not in capabilities:
             return False, [f"Intent index {idx} specifies unmapped capability '{intent_type}'"], ReasonCode.BLOCKED_UNKNOWN_CAPABILITY
+
 
         cap_meta = capabilities[intent_type]
         cat_mode = cap_meta.get("mode")

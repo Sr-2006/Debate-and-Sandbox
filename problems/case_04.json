@@ -1,0 +1,54 @@
+{
+  "system_context": {
+    "objective": "Perform automated Multi-Agent Root Cause Analysis (RCA) and recommend corrective actions.",
+    "environment": "Kubernetes (EKS), Go, PostgreSQL",
+    "current_health_score": 45,
+    "active_warnings": 10
+  },
+  "incident_event": {
+    "incident_id": "case_04_selective_resample",
+    "target_service": "billing-service",
+    "priority_score": 88.0,
+    "severity": "HIGH",
+    "occurrence_count": 300
+  },
+  "infrastructure_topology": {
+    "role": "invoice-generator",
+    "downstream_dependencies": [
+      "postgres-db"
+    ],
+    "exposed_ports": ["8082:8082"]
+  },
+  "service_health_status": {
+    "docker_status": "running",
+    "health_check": "degraded",
+    "dependency_states": {
+      "postgres-db": {
+        "status": "running",
+        "health": "healthy"
+      }
+    }
+  },
+  "telemetry_evidence": {
+    "log_cluster_template": "ERROR [billing-service] pq: cancel statement due to lock timeout",
+    "log_samples": [
+      {
+        "timestamp": "2026-08-10T17:15:00.000Z",
+        "level": "ERROR",
+        "content": "[billing-service] LockTimeoutException: Exclusive lock acquisition timed out after 5000ms on table invoices.",
+        "trace_id": "trace-resample-04",
+        "span_id": "span-lock-timeout"
+      }
+    ],
+    "metrics_snapshot": [
+      {
+        "timestamp": "2026-08-10T17:15:00.000Z",
+        "postgres_lock_waiters": 15
+      }
+    ]
+  },
+  "injected_chaos_context": {
+    "active_infrastructure_mutations": "PostgreSQL transaction lock contention on invoices table."
+  },
+  "agent_instruction": "Analyze PostgreSQL lock contention and output remediation steps."
+}

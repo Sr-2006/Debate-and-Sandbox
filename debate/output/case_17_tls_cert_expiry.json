@@ -1,97 +1,89 @@
 {
     "incident_id": "case_17_tls_cert_expiry",
-    "timestamp": "2026-09-01T21:24:07.441823",
+    "timestamp": "2026-09-02T19:13:47.337422",
     "problem": "### INCIDENT CONTEXT [case_17_tls_cert_expiry]\n- **Target Service**: `ingress-gateway` | **Severity**: `CRITICAL`\n- **Role**: tls-termination-proxy\n- **Target Status**: `running` (failing)\n- \u26a0\ufe0f **Active Mutation**: X.509 TLS certificate expiration on ingress-gateway.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `FATAL [ingress-gateway] SSL_ERROR_SSL: certificate has expired (x509: certificate signed by unknown authority or expired)`\n- **Top Log Samples**:\n  - [2026-08-10T18:30:00.000Z] FATAL: [ingress-gateway] TLS handshake failed for domain api.prod.com: x509: certificate has expired on 2026-08-10T00:00:00Z.\n- **Metrics**: cert_days_until_expiration=0\n\n### TASK INSTRUCTION\nAnalyze TLS certificate expiration and output cert-manager renew/re-issue commands.",
     "round_1": {
         "optimist": {
-            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Recovery Engineer focused on rapid service restoration.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot max 15 words>\", \"primary_component\": \"<one of: Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"evidence\": \"<exact log line or metric you relied on>\", \"triage\": \"<0-5 min actions>\", \"stab\": \"<5-60 min actions>\", \"rca\": \"<root cause grounded in the evidence>\", \"conf\": 0.95}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be one of the listed values.\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Focus on fastest safe recovery. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_17_tls_cert_expiry]\n- **Target Service**: `ingress-gateway` | **Severity**: `CRITICAL`\n- **Role**: tls-termination-proxy\n- **Target Status**: `running` (failing)\n- \u26a0\ufe0f **Active Mutation**: X.509 TLS certificate expiration on ingress-gateway.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `FATAL [ingress-gateway] SSL_ERROR_SSL: certificate has expired (x509: certificate signed by unknown authority or expired)`\n- **Top Log Samples**:\n  - [2026-08-10T18:30:00.000Z] FATAL: [ingress-gateway] TLS handshake failed for domain api.prod.com: x509: certificate has expired on 2026-08-10T00:00:00Z.\n- **Metrics**: cert_days_until_expiration=0\n\n### TASK INSTRUCTION\nAnalyze TLS certificate expiration and output cert-manager renew/re-issue commands.",
+            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Recovery Engineer focused on rapid service restoration.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot max 15 words>\", \"primary_component\": \"<exact_service_name_from_telemetry>\", \"evidence\": \"<exact log line or metric you relied on>\", \"catalog_intent\": \"<registered_capability_type>: {<json_parameters>}\", \"triage\": \"<0-5 min actions>\", \"stab\": \"<5-60 min actions>\", \"rca\": \"<root cause grounded in the evidence>\", \"conf\": 0.95}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be the exact service/container name identified in telemetry (e.g. postgres-db, redis, api-gateway).\n- catalog_intent MUST be a registered capability (e.g. postgres.setting.update, redis.eviction_policy.update, workload.replicas.scale, workload.resources.patch, tls.certificate.renew, container.restart, observe.logs.search).\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Focus on fastest safe recovery. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_17_tls_cert_expiry]\n- **Target Service**: `ingress-gateway` | **Severity**: `CRITICAL`\n- **Role**: tls-termination-proxy\n- **Target Status**: `running` (failing)\n- \u26a0\ufe0f **Active Mutation**: X.509 TLS certificate expiration on ingress-gateway.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `FATAL [ingress-gateway] SSL_ERROR_SSL: certificate has expired (x509: certificate signed by unknown authority or expired)`\n- **Top Log Samples**:\n  - [2026-08-10T18:30:00.000Z] FATAL: [ingress-gateway] TLS handshake failed for domain api.prod.com: x509: certificate has expired on 2026-08-10T00:00:00Z.\n- **Metrics**: cert_days_until_expiration=0\n\n### TASK INSTRUCTION\nAnalyze TLS certificate expiration and output cert-manager renew/re-issue commands.",
             "response": {
-                "logic": "Check cert-manager for certificate reissuance commands.",
-                "primary_component": "Certificate",
-                "evidence": "cert_days_until_expiration=0",
-                "triage": "Review cert-manager logs for reissuance commands.",
-                "stab": "Run cert-manager reissuance commands to replace the expired certificate.",
-                "rca": "TLS certificate expiration detected due to certificate's expiry date.",
-                "conf": 0.95
+                "error": "Unable to generate response due to All connection attempts failed"
             },
-            "latency": 14.44
+            "latency": 0.0
         },
         "critic": {
-            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Reliability Engineer focused on operational risk, safety, and preventing secondary outages.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot safety check max 15 words>\", \"primary_component\": \"<one of: Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"evidence\": \"<exact log line or metric you relied on>\", \"triage\": \"<0-5 min risk-mitigated actions>\", \"stab\": \"<5-60 min stabilization steps>\", \"rca\": \"<root cause grounded in the evidence>\", \"conf\": 0.90}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be one of the listed values.\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Focus on zero data loss and safe rollbacks. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_17_tls_cert_expiry]\n- **Target Service**: `ingress-gateway` | **Severity**: `CRITICAL`\n- **Role**: tls-termination-proxy\n- **Target Status**: `running` (failing)\n- \u26a0\ufe0f **Active Mutation**: X.509 TLS certificate expiration on ingress-gateway.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `FATAL [ingress-gateway] SSL_ERROR_SSL: certificate has expired (x509: certificate signed by unknown authority or expired)`\n- **Top Log Samples**:\n  - [2026-08-10T18:30:00.000Z] FATAL: [ingress-gateway] TLS handshake failed for domain api.prod.com: x509: certificate has expired on 2026-08-10T00:00:00Z.\n- **Metrics**: cert_days_until_expiration=0\n\n### TASK INSTRUCTION\nAnalyze TLS certificate expiration and output cert-manager renew/re-issue commands.",
+            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Reliability Engineer focused on operational risk, safety, and preventing secondary outages.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot safety check max 15 words>\", \"primary_component\": \"<exact_service_name_from_telemetry>\", \"evidence\": \"<exact log line or metric you relied on>\", \"catalog_intent\": \"<registered_capability_type>: {<json_parameters>}\", \"triage\": \"<0-5 min risk-mitigated actions>\", \"stab\": \"<5-60 min stabilization steps>\", \"rca\": \"<root cause grounded in the evidence>\", \"conf\": 0.90}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be the exact service/container name identified in telemetry (e.g. postgres-db, redis, api-gateway).\n- catalog_intent MUST be a registered capability (e.g. postgres.setting.update, redis.eviction_policy.update, workload.replicas.scale, workload.resources.patch, tls.certificate.renew, container.restart, observe.logs.search).\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Focus on zero data loss and safe rollbacks. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_17_tls_cert_expiry]\n- **Target Service**: `ingress-gateway` | **Severity**: `CRITICAL`\n- **Role**: tls-termination-proxy\n- **Target Status**: `running` (failing)\n- \u26a0\ufe0f **Active Mutation**: X.509 TLS certificate expiration on ingress-gateway.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `FATAL [ingress-gateway] SSL_ERROR_SSL: certificate has expired (x509: certificate signed by unknown authority or expired)`\n- **Top Log Samples**:\n  - [2026-08-10T18:30:00.000Z] FATAL: [ingress-gateway] TLS handshake failed for domain api.prod.com: x509: certificate has expired on 2026-08-10T00:00:00Z.\n- **Metrics**: cert_days_until_expiration=0\n\n### TASK INSTRUCTION\nAnalyze TLS certificate expiration and output cert-manager renew/re-issue commands.",
             "response": {
-                "logic": "Check TLS certificate expiration and renew if expired",
-                "primary_component": "Certificate",
-                "evidence": "cert_days_until_expiration=0",
-                "triage": "Run cert-manager to renew TLS certificate",
-                "stab": "Rollback to previous certificate if renewal fails",
-                "rca": "TLS certificate expired, leading to SSL_ERROR_SSL",
-                "conf": 0.9
+                "error": "Unable to generate response due to All connection attempts failed"
             },
-            "latency": 17.16
+            "latency": 0.0
         },
         "fact_checker": {
-            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Verification Engineer focused on log and telemetry evidence validation.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot evidence verification max 15 words>\", \"primary_component\": \"<one of: Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"evidence\": \"<exact log line or metric you relied on>\", \"triage\": \"<0-5 min evidence checks>\", \"stab\": \"<5-60 min metric validations>\", \"rca\": \"<grounded root cause analysis>\", \"conf\": 0.95}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be one of the listed values.\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Base analysis strictly on provided logs and metrics. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_17_tls_cert_expiry]\n- **Target Service**: `ingress-gateway` | **Severity**: `CRITICAL`\n- **Role**: tls-termination-proxy\n- **Target Status**: `running` (failing)\n- \u26a0\ufe0f **Active Mutation**: X.509 TLS certificate expiration on ingress-gateway.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `FATAL [ingress-gateway] SSL_ERROR_SSL: certificate has expired (x509: certificate signed by unknown authority or expired)`\n- **Top Log Samples**:\n  - [2026-08-10T18:30:00.000Z] FATAL: [ingress-gateway] TLS handshake failed for domain api.prod.com: x509: certificate has expired on 2026-08-10T00:00:00Z.\n- **Metrics**: cert_days_until_expiration=0\n\n### TASK INSTRUCTION\nAnalyze TLS certificate expiration and output cert-manager renew/re-issue commands.",
+            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Verification Engineer focused on log and telemetry evidence validation.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot evidence verification max 15 words>\", \"primary_component\": \"<exact_service_name_from_telemetry>\", \"evidence\": \"<exact log line or metric you relied on>\", \"catalog_intent\": \"<registered_capability_type>: {<json_parameters>}\", \"triage\": \"<0-5 min evidence checks>\", \"stab\": \"<5-60 min metric validations>\", \"rca\": \"<grounded root cause analysis>\", \"conf\": 0.95}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be the exact service/container name identified in telemetry (e.g. postgres-db, redis, api-gateway).\n- catalog_intent MUST be a registered capability (e.g. postgres.setting.update, redis.eviction_policy.update, workload.replicas.scale, workload.resources.patch, tls.certificate.renew, container.restart, observe.logs.search).\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Base analysis strictly on provided logs and metrics. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_17_tls_cert_expiry]\n- **Target Service**: `ingress-gateway` | **Severity**: `CRITICAL`\n- **Role**: tls-termination-proxy\n- **Target Status**: `running` (failing)\n- \u26a0\ufe0f **Active Mutation**: X.509 TLS certificate expiration on ingress-gateway.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `FATAL [ingress-gateway] SSL_ERROR_SSL: certificate has expired (x509: certificate signed by unknown authority or expired)`\n- **Top Log Samples**:\n  - [2026-08-10T18:30:00.000Z] FATAL: [ingress-gateway] TLS handshake failed for domain api.prod.com: x509: certificate has expired on 2026-08-10T00:00:00Z.\n- **Metrics**: cert_days_until_expiration=0\n\n### TASK INSTRUCTION\nAnalyze TLS certificate expiration and output cert-manager renew/re-issue commands.",
             "response": {
-                "logic": "Verify TLS cert expiration and renew using cert-manager",
-                "primary_component": "Certificate Management",
-                "evidence": "cert_days_until_expiration=0",
-                "triage": "Check if cert-manager is configured to manage TLS certificates.",
-                "stab": "Validate cert-manager commands to renew the TLS certificate.",
-                "rca": "TLS certificate expiration due to cert-manager not being configured to renew the certificate.",
-                "conf": 0.95
+                "error": "Unable to generate response due to All connection attempts failed"
             },
-            "latency": 14.91
+            "latency": 0.0
+        },
+        "optimist_revised": {
+            "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are a Recovery Engineer focused on rapid service restoration.\nOutput ONLY valid JSON matching this exact schema:\n{\"logic\": \"<micro-cot max 15 words>\", \"primary_component\": \"<exact_service_name_from_telemetry>\", \"evidence\": \"<exact log line or metric you relied on>\", \"catalog_intent\": \"<registered_capability_type>: {<json_parameters>}\", \"triage\": \"<0-5 min actions>\", \"stab\": \"<5-60 min actions>\", \"rca\": \"<root cause grounded in the evidence>\", \"conf\": 0.95}\n\nRules:\n- Keep total output under 90 words.\n- primary_component MUST be the exact service/container name identified in telemetry (e.g. postgres-db, redis, api-gateway).\n- catalog_intent MUST be a registered capability (e.g. postgres.setting.update, redis.eviction_policy.update, workload.replicas.scale, workload.resources.patch, tls.certificate.renew, container.restart, observe.logs.search).\n- evidence MUST quote a real token from the provided telemetry (no invention).\n- Focus on fastest safe recovery. Output strictly valid JSON.\n\n[USER PROMPT]:\nProblem:\n### INCIDENT CONTEXT [case_17_tls_cert_expiry]\n- **Target Service**: `ingress-gateway` | **Severity**: `CRITICAL`\n- **Role**: tls-termination-proxy\n- **Target Status**: `running` (failing)\n- \u26a0\ufe0f **Active Mutation**: X.509 TLS certificate expiration on ingress-gateway.\n\n### TELEMETRY EVIDENCE\n- **Log Pattern**: `FATAL [ingress-gateway] SSL_ERROR_SSL: certificate has expired (x509: certificate signed by unknown authority or expired)`\n- **Top Log Samples**:\n  - [2026-08-10T18:30:00.000Z] FATAL: [ingress-gateway] TLS handshake failed for domain api.prod.com: x509: certificate has expired on 2026-08-10T00:00:00Z.\n- **Metrics**: cert_days_until_expiration=0\n\n### TASK INSTRUCTION\nAnalyze TLS certificate expiration and output cert-manager renew/re-issue commands.\n\n### REVISION CONSTRAINT (Iteration 2)\n- **Your previous hypothesis was an outlier**: Unknown Root Cause\n- **Peer hypotheses (context only, do NOT defer to them)**: CRITIC:  | FACT_CHECKER: \n- **Instruction**: Re-derive your root cause STRICTLY from the telemetry evidence above. Cite the specific log line or metric that supports your conclusion. If the evidence supports your original hypothesis, keep it and justify with the citation. Only pivot if the evidence points elsewhere.",
+            "response": {
+                "error": "Unable to generate response due to All connection attempts failed"
+            },
+            "latency": 0.0
         }
     },
     "consensus": {
-        "score": 0.78,
+        "score": 0.0,
         "threshold": 0.85,
-        "debate_required": false
+        "debate_required": true
     },
     "round_2": null,
     "orchestrator": {
-        "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are the Lead Incident Commander. Synthesize agent perspectives into ONE definitive JSON decision.\nOutput ONLY valid JSON matching this exact schema:\n{\"consensus_rc\": \"<Root Cause>\", \"primary_component\": \"<Network|Disk|Memory|CPU|DNS|Config|Code|Database|Dependency>\", \"consensus_quality\": \"<HIGH|MEDIUM|LOW>\", \"final_triage\": \"<Immediate Fix>\", \"final_stab\": \"<Stabilization Plan>\", \"final_rca\": \"<Long-Term Prevention>\", \"action_commands\": [\"<exact_remediation_command_1>\"], \"confidence\": <0-100 integer>, \"reasoning\": \"<1-sentence justification citing evidence>\"}\n\nRules:\n- Keep total output under 120 words.\n- primary_component MUST be one of the listed values and MUST match the component the majority of agents identified.\n- action_commands MUST be safe, executable, and reference the implicated service/component from the telemetry. NEVER output destructive commands (no delete/drop/flushall/rm -rf/scale to 0).\n- Calculate confidence from EVIDENCE AGREEMENT: if agents converge on the same grounded component, confidence >= 90; if they diverge, confidence <= 60.\n- Pick the technically strongest, safest path. Output strictly valid JSON.\n\n[USER PROMPT]:\nIncident Summary:\n### INCIDENT CONTEXT [case_17_tls_cert_expiry]\n- **Target Service**: `ingress-gateway` | **Severity**: `CRITICAL`\n\nCompressed Agent State:\n{\"workers\": {\"optimist\": {\"component\": \"Certificate\", \"root_cause\": \"TLS certificate expiration detected due to certificate's expiry date.\", \"confidence\": 0.95, \"evidence\": \"cert_days_until_expiration=0\", \"triage\": \"Review cert-manager logs for reissuance commands.\", \"safety_flag\": false}, \"critic\": {\"component\": \"Certificate\", \"root_cause\": \"TLS certificate expired, leading to SSL_ERROR_SSL\", \"confidence\": 0.9, \"evidence\": \"cert_days_until_expiration=0\", \"triage\": \"Run cert-manager to renew TLS certificate\", \"safety_flag\": false}, \"fact_checker\": {\"component\": \"Certificate Management\", \"root_cause\": \"TLS certificate expiration due to cert-manager not being configured to renew the certificate.\", \"confidence\": 0.95, \"evidence\": \"cert_days_until_expiration=0\", \"triage\": \"Check if cert-manager is configured to manage TLS certificates.\", \"safety_flag\": false}}}\n",
+        "prompt": "[SYSTEM PROMPT]:\nCRITICAL: DATA ONLY. NO CONVERSATIONAL FILLER. START IMMEDIATELY WITH {.\n\nYou are the Lead Incident Commander. Synthesize agent perspectives into ONE definitive JSON decision with ONE structured intent.\nOutput ONLY valid JSON matching this exact schema:\n{\n  \"problem_summary\": \"<Summary of incident>\",\n  \"root_cause\": \"<Root Cause>\",\n  \"primary_component\": \"<exact_target_service_name>\",\n  \"evidence_refs\": [\"<evidence_ref_1>\"],\n  \"confidence\": 0.82,\n  \"intent\": {\n    \"intent_type\": \"<catalog_capability_type>\",\n    \"mode\": \"<OBSERVE|MUTATE_REVERSIBLE|MUTATE_HIGH_RISK>\",\n    \"target_ref\": {\n      \"kind\": \"<database|container|cache|workload|service>\",\n      \"canonical_name\": \"<exact_target_service_name>\"\n    },\n    \"parameters\": {}\n  },\n  \"human_recommendation\": \"<Human recommendation>\"\n}\n\nRules:\n- Keep total output concise.\n- DO NOT include action_commands.\n- primary_component MUST be the exact service/container name identified in the incident telemetry (e.g. postgres-db, redis, user-service).\n- intent_type MUST be a registered capability (e.g. postgres.setting.update, redis.eviction_policy.update, container.restart, observe.logs.search).\n- confidence MUST be a float between 0.0 and 1.0 (e.g. 0.82).\n- Output strictly valid JSON.\n\n[USER PROMPT]:\nIncident Summary:\n### INCIDENT CONTEXT [case_17_tls_cert_expiry]\n- **Target Service**: `ingress-gateway` | **Severity**: `CRITICAL`\n\nCompressed Agent State:\n{\"workers\": {\"optimist\": {\"component\": \"unknown\", \"root_cause\": \"\", \"confidence\": 0.0, \"evidence\": [], \"triage\": \"\", \"safety_flag\": false}, \"critic\": {\"component\": \"unknown\", \"root_cause\": \"\", \"confidence\": 0.0, \"evidence\": [], \"triage\": \"\", \"safety_flag\": false}, \"fact_checker\": {\"component\": \"unknown\", \"root_cause\": \"\", \"confidence\": 0.0, \"evidence\": [], \"triage\": \"\", \"safety_flag\": false}}}\n",
         "technical_solution": {
-            "consensus_rc": "TLS certificate expiration detected due to certificate's expiry date.",
-            "primary_component": "Certificate",
-            "consensus_quality": "HIGH",
-            "final_triage": "Run cert-manager to renew TLS certificate",
-            "final_stab": "Monitor cert-manager logs for successful certificate renewal and ensure automatic renewal is configured.",
-            "final_rca": "Configure cert-manager to automatically manage and renew TLS certificates.",
-            "action_commands": [
-                "kubectl apply -f path/to/cert-manager-crd.yaml",
-                "kubectl apply -f path/to/cert-manager-issuer.yaml"
-            ],
-            "confidence": 95,
-            "reasoning": "All agents agreed on the certificate expiration as the root cause with high confidence.",
-            "calculated_confidence": 78,
+            "error": "Unable to generate response due to All connection attempts failed",
+            "confidence": 0.75,
+            "evidence_refs": [],
+            "primary_component": "unknown-service",
+            "intent": {
+                "intent_type": "NO_SUPPORTED_ACTION",
+                "mode": "OBSERVE",
+                "target_ref": {
+                    "kind": "container",
+                    "canonical_name": "unknown-service"
+                },
+                "parameters": {}
+            },
+            "calculated_confidence": 0,
             "safety_violation": false,
             "scoring_metadata": {
                 "safety_violation": false,
                 "blocked_command": null,
                 "veto_reason": null,
-                "semantic_similarity": 0.801,
-                "outlier_agent": "critic",
+                "semantic_similarity": 1.0,
+                "outlier_agent": "optimist",
                 "component_agreement": 1.0,
-                "evidence_grounding": 0.618,
+                "evidence_grounding": 0.0,
                 "divergence_penalty": 0,
-                "evidence_mapping_penalty": 7,
+                "evidence_mapping_penalty": 0,
                 "schema_bonus": 10,
-                "evidence_gate": false,
-                "action_risk": "medium",
+                "evidence_gate": true,
+                "action_risk": "low",
                 "execution_mode": "autonomous",
-                "parse_failures": 0,
+                "parse_failures": 3,
                 "telemetry_hazard_detected": false,
+                "parse_penalty": 60,
+                "non_executable_deduction": 5,
                 "difficulty_prior": 1.0
             }
         },
-        "confidence": "78%",
-        "latency": 23.43
+        "confidence": "0%",
+        "latency": 3.03
     },
     "performance": {
-        "round1_time": 17.87,
-        "round2_time": 0.0,
-        "orchestrator_time": 23.43,
-        "total_pipeline_time": 41.42
+        "round1_time": 4.49,
+        "round2_time": 2.97,
+        "orchestrator_time": 3.03,
+        "total_pipeline_time": 13.54
     }
 }

@@ -7,6 +7,7 @@ capabilities:
     executor: "docker_executor"
     verifier: "service_health"
     requires_human_approval: false
+    mvp_supported: true
     parameters_schema:
       query: { type: "string" }
       max_lines: { type: "integer", default: 100 }
@@ -19,6 +20,7 @@ capabilities:
     executor: "docker_executor"
     verifier: "service_health"
     requires_human_approval: false
+    mvp_supported: false
     parameters_schema:
       metric_name: { type: "string" }
 
@@ -30,6 +32,7 @@ capabilities:
     executor: "postgres_executor"
     verifier: "postgres_verifier"
     requires_human_approval: false
+    mvp_supported: true
     parameters_schema:
       setting_name: { type: "string" }
       value: { type: ["string", "number"] }
@@ -42,6 +45,7 @@ capabilities:
     executor: "postgres_executor"
     verifier: "postgres_verifier"
     requires_human_approval: false
+    mvp_supported: false
     parameters_schema: {}
 
   postgres.wal.diagnose:
@@ -52,6 +56,7 @@ capabilities:
     executor: "postgres_executor"
     verifier: "postgres_verifier"
     requires_human_approval: false
+    mvp_supported: false
     parameters_schema: {}
 
   postgres.wal.archive_cleanup:
@@ -62,6 +67,7 @@ capabilities:
     executor: "postgres_executor"
     verifier: "postgres_verifier"
     requires_human_approval: true
+    mvp_supported: false
     parameters_schema:
       retention_boundary: { type: "string" }
 
@@ -73,6 +79,7 @@ capabilities:
     executor: "redis_executor"
     verifier: "redis_verifier"
     requires_human_approval: false
+    mvp_supported: true
     parameters_schema:
       policy: { type: "string" }
 
@@ -84,6 +91,7 @@ capabilities:
     executor: "kubernetes_executor"
     verifier: "kubernetes_verifier"
     requires_human_approval: false
+    mvp_supported: false
     parameters_schema:
       replicas: { type: "integer", minimum: 1 }
 
@@ -95,6 +103,7 @@ capabilities:
     executor: "kubernetes_executor"
     verifier: "kubernetes_verifier"
     requires_human_approval: false
+    mvp_supported: false
     parameters_schema:
       resource_type: { type: "string", enum: ["cpu", "memory"] }
       limit_value: { type: "string" }
@@ -107,6 +116,7 @@ capabilities:
     executor: "kubernetes_executor"
     verifier: "kubernetes_verifier"
     requires_human_approval: false
+    mvp_supported: false
     parameters_schema: {}
 
   container.restart:
@@ -117,6 +127,7 @@ capabilities:
     executor: "docker_executor"
     verifier: "service_health"
     requires_human_approval: false
+    mvp_supported: true
     parameters_schema: {}
 
   tls.certificate.renew:
@@ -127,6 +138,7 @@ capabilities:
     executor: "cert_manager_executor"
     verifier: "tls_verifier"
     requires_human_approval: false
+    mvp_supported: false
     parameters_schema:
       secret_name: { type: "string" }
       domain: { type: "string" }
@@ -139,6 +151,7 @@ capabilities:
     executor: "kubernetes_executor"
     verifier: "kubernetes_verifier"
     requires_human_approval: false
+    mvp_supported: false
     parameters_schema:
       node_name: { type: "string" }
 
@@ -150,6 +163,7 @@ capabilities:
     executor: "kubernetes_executor"
     verifier: "kubernetes_verifier"
     requires_human_approval: true
+    mvp_supported: false
     parameters_schema:
       node_name: { type: "string" }
 
@@ -161,6 +175,7 @@ capabilities:
     executor: "cilium_executor"
     verifier: "network_verifier"
     requires_human_approval: false
+    mvp_supported: false
     parameters_schema: {}
 
   cilium.policy.reload:
@@ -171,6 +186,7 @@ capabilities:
     executor: "cilium_executor"
     verifier: "network_verifier"
     requires_human_approval: false
+    mvp_supported: false
     parameters_schema:
       policy_name: { type: "string" }
 
@@ -182,6 +198,7 @@ capabilities:
     executor: "kubernetes_executor"
     verifier: "kubernetes_verifier"
     requires_human_approval: false
+    mvp_supported: false
     parameters_schema:
       rate_limit_rps: { type: "integer", minimum: 1 }
 
@@ -193,6 +210,7 @@ capabilities:
     executor: "kubernetes_executor"
     verifier: "kubernetes_verifier"
     requires_human_approval: false
+    mvp_supported: false
     parameters_schema: {}
 
   ceph.health.inspect:
@@ -203,6 +221,7 @@ capabilities:
     executor: "ceph_executor"
     verifier: "storage_verifier"
     requires_human_approval: false
+    mvp_supported: false
     parameters_schema: {}
 
   storage.snapshot.restore:
@@ -213,5 +232,6 @@ capabilities:
     executor: "ceph_executor"
     verifier: "storage_verifier"
     requires_human_approval: true
+    mvp_supported: false
     parameters_schema:
       snapshot_id: { type: "string" }

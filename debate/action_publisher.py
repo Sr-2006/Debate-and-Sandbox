@@ -98,8 +98,27 @@ def build_action_proposed(
     if safety_violation:
         execution_tier = "HUMAN_REVIEW"
 
-    problem_text = result.get("problem", "")
-    target_name = solution.get("primary_component") or solution.get("target_service") or "unknown-service"
+    orig_prob = result.get("original_problem")
+    raw_target = None
+    if isinstance(orig_prob, dict):
+        raw_target = orig_prob.get("incident_event", {}).get("target_service") or orig_prob.get("target_service")
+    elif isinstance(orig_prob, str):
+        import re
+        match = re.search(r"Target Service\*\*:\s*([^\s\n\r]+)", orig_prob)
+        if match:
+            raw_target = match.group(1)
+
+    target_name = solution.get("primary_component") or solution.get("target_service") or raw_target or "target-service"
+    if not target_name or target_name.lower() in ["unknown", "unknown-service", "n/a", "none"]:
+        target_name = raw_target or "target-service"
+
+    problem_text = result.get("problem") or solution.get("problem_summary") or result.get("normalized_incident") or "Incident reported"
+    if isinstance(problem_text, dict):
+        problem_text = json.dumps(problem_text)
+
+
+
+
     
     # Extract evidence anchors directly from solution without fabrication
     raw_ev = solution.get("evidence") or solution.get("evidence_refs") or result.get("evidence_refs")
@@ -110,7 +129,11 @@ def build_action_proposed(
     else:
         evidence_anchors = []
 
+    single_intent = solution.get("intent")
     intents_raw = solution.get("intents", [])
+    if single_intent and isinstance(single_intent, dict):
+        intents_raw = [single_intent]
+
     intents: List[Intent] = []
 
     if intents_raw and isinstance(intents_raw, list):
@@ -119,10 +142,12 @@ def build_action_proposed(
                 t_ref = item.get("target_ref", {})
                 t_kind = t_ref.get("kind") if isinstance(t_ref, dict) else item.get("target_kind", "container")
                 t_name = t_ref.get("canonical_name") if isinstance(t_ref, dict) else target_name
+                intent_type = item.get("intent_type", "NO_SUPPORTED_ACTION")
+                mode = item.get("mode", "OBSERVE")
                 intents.append(Intent(
                     intent_id=item.get("intent_id", f"int_{idx}_{uuid.uuid4().hex[:6]}"),
-                    intent_type=item.get("intent_type", ""),
-                    mode=item.get("mode", "OBSERVE"),
+                    intent_type=intent_type,
+                    mode=mode,
                     target_ref=TargetRef(kind=t_kind or "container", canonical_name=t_name or target_name),
                     parameters=item.get("parameters", {}),
                     evidence_refs=item.get("evidence_refs", evidence_anchors),
@@ -130,46 +155,26 @@ def build_action_proposed(
                     postconditions=item.get("postconditions", []),
                     timeout_seconds=item.get("timeout_seconds", 30),
                     max_attempts=item.get("max_attempts", 1),
-                    risk_class=item.get("risk_class", "MEDIUM"),
+                    risk_class=item.get("risk_class", "MEDIUM" if mode != "OBSERVE" else "LOW"),
                     requires_human_approval=item.get("requires_human_approval", safety_violation)
                 ))
 
     if not intents:
-        cat_intent = solution.get("catalog_intent") or solution.get("intent")
-        raw_cmds = solution.get("action_commands", [])
-        if cat_intent:
-            raw_cmds = [cat_intent]
-        elif not isinstance(raw_cmds, list):
-            raw_cmds = [str(raw_cmds)] if raw_cmds else []
+        intents.append(Intent(
+            intent_id=f"int_0_{uuid.uuid4().hex[:6]}",
+            intent_type="NO_SUPPORTED_ACTION",
+            mode="OBSERVE",
+            target_ref=TargetRef(kind="container", canonical_name=target_name),
+            parameters={},
+            evidence_refs=evidence_anchors,
+            preconditions=[],
+            postconditions=[],
+            timeout_seconds=30,
+            max_attempts=1,
+            risk_class="LOW",
+            requires_human_approval=safety_violation
+        ))
 
-        for idx, cmd in enumerate(raw_cmds):
-            first_cmd = str(cmd).strip()
-            intent_type = first_cmd
-            params: Dict[str, Any] = {}
-            if ":" in first_cmd and ("{" in first_cmd or "}" in first_cmd or "'" in first_cmd or '"' in first_cmd):
-                parts = first_cmd.split(":", 1)
-                intent_type = parts[0].strip()
-                param_str = parts[1].strip().replace("'", '"')
-                try:
-                    params = json.loads(param_str)
-                except Exception:
-                    params = {}
-
-            mode = "OBSERVE" if intent_type.startswith("observe") or "inspect" in intent_type or intent_type.endswith(".diagnose") else "MUTATE_REVERSIBLE"
-            intents.append(Intent(
-                intent_id=f"int_{idx}_{uuid.uuid4().hex[:6]}",
-                intent_type=intent_type,
-                mode=mode,
-                target_ref=TargetRef(kind="container", canonical_name=target_name),
-                parameters=params,
-                evidence_refs=evidence_anchors,
-                preconditions=[],
-                postconditions=[],
-                timeout_seconds=30,
-                max_attempts=1,
-                risk_class="MEDIUM" if mode != "OBSERVE" else "LOW",
-                requires_human_approval=safety_violation
-            ))
 
 
 

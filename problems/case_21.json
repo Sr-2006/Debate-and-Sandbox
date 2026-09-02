@@ -1,0 +1,47 @@
+{
+  "system_context": {
+    "objective": "Perform automated Multi-Agent Root Cause Analysis (RCA) and recommend corrective actions.",
+    "environment": "Kubernetes (EKS), Nginx Ingress, Envoy Rate Limiter",
+    "current_health_score": 65,
+    "active_warnings": 5
+  },
+  "incident_event": {
+    "incident_id": "case_21_ingress_rate_limit",
+    "target_service": "public-api",
+    "priority_score": 75.0,
+    "severity": "MEDIUM",
+    "occurrence_count": 12000
+  },
+  "infrastructure_topology": {
+    "role": "public-facing-proxy",
+    "downstream_dependencies": [],
+    "exposed_ports": ["80:80", "443:443"]
+  },
+  "service_health_status": {
+    "docker_status": "running",
+    "health_check": "healthy",
+    "dependency_states": {}
+  },
+  "telemetry_evidence": {
+    "log_cluster_template": "WARN [public-api] HTTP 429 Too Many Requests: local_rate_limiting_k8s_ingress active",
+    "log_samples": [
+      {
+        "timestamp": "2026-08-10T18:50:00.000Z",
+        "level": "WARN",
+        "content": "[public-api] HTTP 429: Rate limit exceeded (100 req/sec limit reached by IP 192.168.1.50).",
+        "trace_id": "trace-ratelimit-21",
+        "span_id": "span-429"
+      }
+    ],
+    "metrics_snapshot": [
+      {
+        "timestamp": "2026-08-10T18:50:00.000Z",
+        "rate_limit_429_count": 12000
+      }
+    ]
+  },
+  "injected_chaos_context": {
+    "active_infrastructure_mutations": "Strict Nginx Ingress annotation limit-rps set too aggressively causing legit client 429 drops."
+  },
+  "agent_instruction": "Analyze HTTP 429 rate limiting drops and output safe Nginx Ingress rate limit relaxation commands."
+}

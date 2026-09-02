@@ -240,6 +240,8 @@ class DebateManager:
         json_path, md_path = logger.save()
 
         return {
+            "original_problem": problem,
+            "normalized_incident": formatted_problem,
             "solution": orchestration_result["solution"],
             "confidence_score": calc_confidence,
             "execution_tier": execution_tier,
@@ -248,9 +250,17 @@ class DebateManager:
             "round_2_executed": round_2_executed,
             "total_latency_seconds": round(total_latency, 2),
             "agent_responses": agent_responses,
+            "r1_detailed": r1_detailed,
+            "orchestrator_meta": {
+                "prompt": orchestration_result["prompt"],
+                "response": orchestration_result["solution"],
+                "latency": orch_time
+            },
+            "scoring_meta": meta_info,
             "json_log_path": json_path,
             "md_log_path": md_path
         }
+
 
     def run(self, problem: str | dict) -> dict:
         """Synchronous wrapper for run_async."""

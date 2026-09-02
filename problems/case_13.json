@@ -1,0 +1,55 @@
+{
+  "system_context": {
+    "objective": "Perform automated Multi-Agent Root Cause Analysis (RCA) and recommend corrective actions.",
+    "environment": "Kubernetes (EKS), CoreDNS 1.9",
+    "current_health_score": 50,
+    "active_warnings": 15
+  },
+  "incident_event": {
+    "incident_id": "case_13_dns_resolution_failure",
+    "target_service": "payment-api",
+    "priority_score": 85.0,
+    "severity": "HIGH",
+    "occurrence_count": 920
+  },
+  "infrastructure_topology": {
+    "role": "payment-gateway-integration",
+    "downstream_dependencies": [
+      "coredns"
+    ],
+    "exposed_ports": ["8443:8443"]
+  },
+  "service_health_status": {
+    "docker_status": "running",
+    "health_check": "failing",
+    "dependency_states": {
+      "coredns": {
+        "status": "running",
+        "health": "degraded"
+      }
+    }
+  },
+  "telemetry_evidence": {
+    "log_cluster_template": "ERROR [payment-api] getaddrinfo EAI_AGAIN api.stripe.com:53 NXDOMAIN",
+    "log_samples": [
+      {
+        "timestamp": "2026-08-10T18:10:00.000Z",
+        "level": "ERROR",
+        "content": "[payment-api] Error: getaddrinfo EAI_AGAIN api.stripe.com (CoreDNS upstream timeout).",
+        "trace_id": "trace-dns-13",
+        "span_id": "span-dns-timeout"
+      }
+    ],
+    "metrics_snapshot": [
+      {
+        "timestamp": "2026-08-10T18:10:00.000Z",
+        "dns_lookup_latency_ms": 5000.0,
+        "dns_error_rate_percent": 80.0
+      }
+    ]
+  },
+  "injected_chaos_context": {
+    "active_infrastructure_mutations": "CoreDNS upstream resolver timeout producing external domain resolution failure."
+  },
+  "agent_instruction": "Analyze DNS resolution failure and output safe CoreDNS cache/upstream config steps."
+}

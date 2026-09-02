@@ -1,0 +1,55 @@
+{
+  "system_context": {
+    "objective": "Perform automated Multi-Agent Root Cause Analysis (RCA) and recommend corrective actions.",
+    "environment": "Kubernetes (EKS), RabbitMQ Broker",
+    "current_health_score": 50,
+    "active_warnings": 10
+  },
+  "incident_event": {
+    "incident_id": "case_16_rabbitmq_queue_backlog",
+    "target_service": "email-consumer",
+    "priority_score": 82.0,
+    "severity": "HIGH",
+    "occurrence_count": 50000
+  },
+  "infrastructure_topology": {
+    "role": "amqp-message-consumer",
+    "downstream_dependencies": [
+      "rabbitmq"
+    ],
+    "exposed_ports": ["5672:5672"]
+  },
+  "service_health_status": {
+    "docker_status": "running",
+    "health_check": "degraded",
+    "dependency_states": {
+      "rabbitmq": {
+        "status": "running",
+        "health": "healthy"
+      }
+    }
+  },
+  "telemetry_evidence": {
+    "log_cluster_template": "WARN [email-consumer] Message unacknowledged backlog exceeded threshold (50000 msgs).",
+    "log_samples": [
+      {
+        "timestamp": "2026-08-10T18:25:00.000Z",
+        "level": "WARN",
+        "content": "[email-consumer] Consumer prefetch limit unacked count = 50000. Consumer processing latency high.",
+        "trace_id": "trace-amqp-16",
+        "span_id": "span-backlog"
+      }
+    ],
+    "metrics_snapshot": [
+      {
+        "timestamp": "2026-08-10T18:25:00.000Z",
+        "messages_unacknowledged": 50000,
+        "consumer_count": 2
+      }
+    ]
+  },
+  "injected_chaos_context": {
+    "active_infrastructure_mutations": "Slow consumer processing causing AMQP queue message accumulation."
+  },
+  "agent_instruction": "Analyze RabbitMQ message backlog and output consumer scale-out steps."
+}

@@ -1,0 +1,56 @@
+{
+  "system_context": {
+    "objective": "Perform automated Multi-Agent Root Cause Analysis (RCA) and recommend corrective actions.",
+    "environment": "Kubernetes (EKS), Node.js Microservices, PostgreSQL, Redis",
+    "current_health_score": 40,
+    "active_warnings": 8
+  },
+  "incident_event": {
+    "incident_id": "case_01_semantic_consensus",
+    "target_service": "user-service",
+    "priority_score": 90.0,
+    "severity": "CRITICAL",
+    "occurrence_count": 1200
+  },
+  "infrastructure_topology": {
+    "role": "auth-and-user-profile-api",
+    "downstream_dependencies": [
+      "redis-cache",
+      "postgres-db"
+    ],
+    "exposed_ports": ["8080:8080"]
+  },
+  "service_health_status": {
+    "docker_status": "running",
+    "health_check": "failing",
+    "dependency_states": {
+      "redis-cache": {
+        "status": "running",
+        "health": "unhealthy"
+      }
+    }
+  },
+  "telemetry_evidence": {
+    "log_cluster_template": "FATAL [user-service] java.lang.OutOfMemoryError: Java heap space",
+    "log_samples": [
+      {
+        "timestamp": "2026-08-10T17:00:00.000Z",
+        "level": "FATAL",
+        "content": "[user-service] OutOfMemoryError: Java heap space exhausted (RAM 100% utilized).",
+        "trace_id": "trace-oom-01",
+        "span_id": "span-oom"
+      }
+    ],
+    "metrics_snapshot": [
+      {
+        "timestamp": "2026-08-10T17:00:00.000Z",
+        "memory_usage_percent": 99.9,
+        "cpu_percent": 15.0
+      }
+    ]
+  },
+  "injected_chaos_context": {
+    "active_infrastructure_mutations": "Redis heap memory allocation exceeded maxmemory threshold causing OutOfMemory RAM exhaustion."
+  },
+  "agent_instruction": "Determine the memory failure root cause and output a safe remediation plan."
+}
