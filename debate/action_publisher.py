@@ -97,7 +97,7 @@ def build_action_proposed(
     problem_text = result.get("problem", "")
     target_name = solution.get("primary_component") or solution.get("target_service") or "unknown-service"
     
-    # Extract evidence anchors directly from solution
+    # Extract evidence anchors directly from solution without fabrication
     raw_ev = solution.get("evidence") or solution.get("evidence_refs") or result.get("evidence_refs")
     if isinstance(raw_ev, str):
         evidence_anchors = [raw_ev] if raw_ev.strip() else []
@@ -106,21 +106,20 @@ def build_action_proposed(
     else:
         evidence_anchors = []
 
-    if not evidence_anchors:
-        evidence_anchors = [f"log_{incident_id}"]
-
-
     intents_raw = solution.get("intents", [])
     intents: List[Intent] = []
 
     if intents_raw and isinstance(intents_raw, list):
         for idx, item in enumerate(intents_raw):
             if isinstance(item, dict):
+                t_ref = item.get("target_ref", {})
+                t_kind = t_ref.get("kind") if isinstance(t_ref, dict) else item.get("target_kind", "container")
+                t_name = t_ref.get("canonical_name") if isinstance(t_ref, dict) else target_name
                 intents.append(Intent(
                     intent_id=item.get("intent_id", f"int_{idx}_{uuid.uuid4().hex[:6]}"),
-                    intent_type=item.get("intent_type", "observe.logs.search"),
+                    intent_type=item.get("intent_type", ""),
                     mode=item.get("mode", "OBSERVE"),
-                    target_ref=TargetRef(kind=item.get("target_kind", "container"), canonical_name=target_name),
+                    target_ref=TargetRef(kind=t_kind or "container", canonical_name=t_name or target_name),
                     parameters=item.get("parameters", {}),
                     evidence_refs=item.get("evidence_refs", evidence_anchors),
                     preconditions=item.get("preconditions", []),
@@ -152,25 +151,6 @@ def build_action_proposed(
                 except Exception:
                     params = {}
 
-            from contracts.validation import get_capabilities
-            capabilities = get_capabilities()
-            if intent_type not in capabilities:
-                cmd_lower = intent_type.lower()
-                if "postgres" in cmd_lower or "pg" in cmd_lower or "sql" in cmd_lower:
-                    intent_type = "postgres.setting.update"
-                    params = {"setting_name": "max_connections", "value": "200"}
-                elif "redis" in cmd_lower:
-                    intent_type = "redis.eviction_policy.update"
-                    params = {"policy": "volatile-lru"}
-                elif "restart" in cmd_lower or "systemctl" in cmd_lower:
-                    intent_type = "container.restart"
-                elif "scale" in cmd_lower or "replica" in cmd_lower:
-                    intent_type = "workload.replicas.scale"
-                    params = {"replicas": 3}
-                else:
-                    intent_type = "observe.logs.search"
-                    params = {"query": "error"}
-
             mode = "OBSERVE" if intent_type.startswith("observe") or "inspect" in intent_type or intent_type.endswith(".diagnose") else "MUTATE_REVERSIBLE"
             intents.append(Intent(
                 intent_id=f"int_{idx}_{uuid.uuid4().hex[:6]}",
@@ -182,11 +162,11 @@ def build_action_proposed(
                 preconditions=[],
                 postconditions=[],
                 timeout_seconds=30,
-
                 max_attempts=1,
                 risk_class="MEDIUM" if mode != "OBSERVE" else "LOW",
                 requires_human_approval=safety_violation
             ))
+
 
 
     env = ActionProposedV2Envelope.create_default(

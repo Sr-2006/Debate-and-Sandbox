@@ -42,4 +42,5 @@ class PolicyEngine:
 def is_target_supported(supported_list: List[str], target_kind: str) -> bool:
     if not supported_list:
         return True
-    return target_kind in supported_list or "container" in supported_list or "service" in supported_list
+    return target_kind in supported_list
+

@@ -24,8 +24,10 @@ class ConfidenceAnalyzer:
         phase3_confidence: float = 0.85,
         safety_violation: bool = False,
         mode: Optional[str] = None,
-        qualification_context: Optional[Dict[str, Any]] = None
+        qualification_context: Optional[Dict[str, Any]] = None,
+        target_name: Optional[str] = None
     ) -> Dict[str, Any]:
+
 
 
         mapping_conf = 1.0 if intent_type else 0.0
@@ -53,10 +55,32 @@ class ConfidenceAnalyzer:
 
         qualification_active = False
         if qualification_context and isinstance(qualification_context, dict):
-            if qualification_context.get("qualification_run", False):
-                auth_caps = qualification_context.get("authorized_capabilities", [])
-                if not auth_caps or intent_type in auth_caps:
+            q_run = qualification_context.get("qualification_run", False)
+            auth_caps = qualification_context.get("authorized_capabilities", [])
+            allowed_targets = qualification_context.get("allowed_targets", [])
+            expires_at = qualification_context.get("expires_at", "")
+            prod_eligible = qualification_context.get("production_eligible", False)
+
+            # Strict qualification checks: empty lists authorize nothing, production_eligible must be false
+            if q_run and auth_caps and allowed_targets and not prod_eligible:
+                target_matched = any(t in allowed_targets for t in [target_kind, target_name or ""])
+                cap_matched = intent_type in auth_caps
+                
+                # Expiry check
+                not_expired = True
+                if expires_at:
+                    try:
+                        exp_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                        now_dt = datetime.now(timezone.utc)
+                        if now_dt > exp_dt:
+                            not_expired = False
+                    except Exception:
+                        not_expired = False
+
+                if target_matched and cap_matched and not_expired:
                     qualification_active = True
+
+
 
         confidence_required = not is_observe_mode
 

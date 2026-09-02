@@ -104,16 +104,36 @@ def validate_envelope(payload: Dict[str, Any]) -> Tuple[bool, List[str], ReasonC
         if target_kind and target_kind not in supported_targets:
             return False, [f"Intent index {idx} target kind '{target_kind}' not in supported targets {supported_targets} for capability '{intent_type}'"], ReasonCode.BLOCKED_TARGET_UNRESOLVED
 
-        # Required parameters check
+        # Detailed Parameter Schema Validation
         param_schema = cap_meta.get("parameters_schema", {})
         for required_param, p_rules in param_schema.items():
-            if isinstance(p_rules, dict) and p_rules.get("default") is None:
-                if required_param not in params or params[required_param] is None or str(params[required_param]).strip() == "":
-                    return False, [f"Intent index {idx} ({intent_type}) missing required parameter '{required_param}'"], ReasonCode.BLOCKED_INVALID_PARAMETERS
+            if isinstance(p_rules, dict):
+                # Required parameter check
+                if p_rules.get("default") is None:
+                    if required_param not in params or params[required_param] is None or str(params[required_param]).strip() == "":
+                        return False, [f"Intent index {idx} ({intent_type}) missing required parameter '{required_param}'"], ReasonCode.BLOCKED_INVALID_PARAMETERS
+                
+                # Parameter type & value check
+                if required_param in params:
+                    val = params[required_param]
+                    expected_type = p_rules.get("type")
+                    if expected_type == "integer" and not (isinstance(val, int) and not isinstance(val, bool)):
+                        return False, [f"Intent index {idx} ({intent_type}) parameter '{required_param}' must be integer, got {type(val).__name__}"], ReasonCode.BLOCKED_INVALID_PARAMETERS
+                    elif expected_type == "string" and not isinstance(val, str):
+                        return False, [f"Intent index {idx} ({intent_type}) parameter '{required_param}' must be string, got {type(val).__name__}"], ReasonCode.BLOCKED_INVALID_PARAMETERS
+
+                    min_bound = p_rules.get("minimum")
+                    if min_bound is not None and isinstance(val, (int, float)) and val < min_bound:
+                        return False, [f"Intent index {idx} ({intent_type}) parameter '{required_param}' value {val} below minimum bound {min_bound}"], ReasonCode.BLOCKED_INVALID_PARAMETERS
+
+                    enum_vals = p_rules.get("enum")
+                    if enum_vals and val not in enum_vals:
+                        return False, [f"Intent index {idx} ({intent_type}) parameter '{required_param}' value '{val}' not in allowed enum values {enum_vals}"], ReasonCode.BLOCKED_INVALID_PARAMETERS
 
         # Evidence binding check for mutative operations
         if mode in ["MUTATE_REVERSIBLE", "MUTATE_HIGH_RISK"] and not evidence:
             return False, [f"Intent index {idx} ({intent_type}) missing evidence_refs for mutative action"], ReasonCode.BLOCKED_MISSING_EVIDENCE
+
 
     return True, [], ReasonCode.DIAGNOSED
 

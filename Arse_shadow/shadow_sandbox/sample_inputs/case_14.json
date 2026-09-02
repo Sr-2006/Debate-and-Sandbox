@@ -1,4 +1,9 @@
 {
+  "incident_id": "case_14",
+  "problem": "High risk database mutation",
+  "safety_violation": true,
+  "qualification_run": null,
+  "raw_v2_envelope": {
     "schema_version": "2.0",
     "event_id": "evt_case_14",
     "event_type": "autosre.action.proposed",
@@ -7,48 +12,57 @@
     "fingerprint": "fp_case_14",
     "created_at": "2026-09-02T10:00:00Z",
     "source": {
-        "phase": "phase3_debate",
-        "code_commit": "1c8bdb51efd7de4038d831f20de2382471874701",
-        "model_name": "qwen2.5-coder"
+      "system": "debate_engine",
+      "subsystem": "orchestrator",
+      "phase": "PHASE_3",
+      "version": "2.0",
+      "code_commit": "275b8dbf"
     },
-    "problem_summary": "Postgres WAL archive cleanup high risk",
+    "problem_summary": "High risk database mutation",
     "target_ref": {
-        "kind": "database",
-        "canonical_name": "postgres-db",
-        "shadow_alias": "shadow-postgres-db"
+      "kind": "database",
+      "canonical_name": "shadow-postgres-db",
+      "namespace": "shadow"
     },
     "phase3_confidence": {
-        "score": 0.85,
-        "uncertainty": 0.05,
-        "calibration_status": "CALIBRATED"
+      "score": 0.88,
+      "agreement_ratio": 0.95
     },
-    "execution_tier": "HUMAN_REVIEW",
-    "safety_violation": false,
+    "execution_tier": "SHADOW_SANDBOX",
+    "safety_violation": true,
     "evidence_refs": [
-        "log_wal_01"
+      "log_14"
     ],
     "intents": [
-        {
-            "intent_id": "int_case_14_1",
-            "intent_type": "postgres.wal.archive_cleanup",
-            "mode": "MUTATE_HIGH_RISK",
-            "target_ref": {
-                "kind": "database",
-                "canonical_name": "postgres-db"
-            },
-            "parameters": {
-                "retention_boundary": "000000010000000000000020"
-            },
-            "evidence_refs": [
-                "log_wal_01"
-            ],
-            "preconditions": [],
-            "postconditions": [],
-            "timeout_seconds": 30,
-            "max_attempts": 1,
-            "risk_class": "HIGH",
-            "requires_human_approval": true
-        }
+      {
+        "intent_id": "int_14_01",
+        "intent_type": "postgres.setting.update",
+        "mode": "MUTATE_HIGH_RISK",
+        "target_ref": {
+          "kind": "database",
+          "canonical_name": "shadow-postgres-db",
+          "namespace": "shadow"
+        },
+        "parameters": {
+          "setting_name": "max_connections",
+          "value": "200"
+        },
+        "evidence_refs": [
+          "log_14"
+        ],
+        "preconditions": [
+          "pre_check"
+        ],
+        "postconditions": [
+          "post_check"
+        ],
+        "timeout_seconds": 30,
+        "max_attempts": 1,
+        "risk_class": "HIGH",
+        "requires_human_approval": true
+      }
     ],
-    "human_summary": "Postgres WAL archive cleanup high risk"
+    "human_summary": "High risk database mutation",
+    "qualification_run": null
+  }
 }

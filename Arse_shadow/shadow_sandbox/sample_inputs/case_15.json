@@ -1,4 +1,19 @@
 {
+  "incident_id": "case_15",
+  "problem": "Patch workload CPU limits",
+  "safety_violation": false,
+  "qualification_run": {
+    "qualification_run": true,
+    "authorized_capabilities": [
+      "workload.resources.patch"
+    ],
+    "allowed_targets": [
+      "shadow-payment-service"
+    ],
+    "expires_at": "2030-01-01T00:00:00Z",
+    "production_eligible": false
+  },
+  "raw_v2_envelope": {
     "schema_version": "2.0",
     "event_id": "evt_case_15",
     "event_type": "autosre.action.proposed",
@@ -7,49 +22,67 @@
     "fingerprint": "fp_case_15",
     "created_at": "2026-09-02T10:00:00Z",
     "source": {
-        "phase": "phase3_debate",
-        "code_commit": "1c8bdb51efd7de4038d831f20de2382471874701",
-        "model_name": "qwen2.5-coder"
+      "system": "debate_engine",
+      "subsystem": "orchestrator",
+      "phase": "PHASE_3",
+      "version": "2.0",
+      "code_commit": "275b8dbf"
     },
-    "problem_summary": "CPU throttling resource limit patch",
+    "problem_summary": "Patch workload CPU limits",
     "target_ref": {
-        "kind": "workload",
-        "canonical_name": "billing-service",
-        "shadow_alias": "shadow-billing-service"
+      "kind": "workload",
+      "canonical_name": "shadow-payment-service",
+      "namespace": "shadow"
     },
     "phase3_confidence": {
-        "score": 0.85,
-        "uncertainty": 0.05,
-        "calibration_status": "CALIBRATED"
+      "score": 0.88,
+      "agreement_ratio": 0.95
     },
-    "execution_tier": "tier_1",
+    "execution_tier": "SHADOW_SANDBOX",
     "safety_violation": false,
     "evidence_refs": [
-        "log_cpu_01"
+      "log_15"
     ],
     "intents": [
-        {
-            "intent_id": "int_case_15_1",
-            "intent_type": "workload.resources.patch",
-            "mode": "MUTATE_REVERSIBLE",
-            "target_ref": {
-                "kind": "workload",
-                "canonical_name": "billing-service"
-            },
-            "parameters": {
-                "resource_type": "cpu",
-                "limit_value": "2000m"
-            },
-            "evidence_refs": [
-                "log_cpu_01"
-            ],
-            "preconditions": [],
-            "postconditions": [],
-            "timeout_seconds": 30,
-            "max_attempts": 1,
-            "risk_class": "MEDIUM",
-            "requires_human_approval": false
-        }
+      {
+        "intent_id": "int_15_01",
+        "intent_type": "workload.resources.patch",
+        "mode": "MUTATE_REVERSIBLE",
+        "target_ref": {
+          "kind": "workload",
+          "canonical_name": "shadow-payment-service",
+          "namespace": "shadow"
+        },
+        "parameters": {
+          "resource_type": "cpu",
+          "limit": "2000m"
+        },
+        "evidence_refs": [
+          "log_15"
+        ],
+        "preconditions": [
+          "pre_check"
+        ],
+        "postconditions": [
+          "post_check"
+        ],
+        "timeout_seconds": 30,
+        "max_attempts": 1,
+        "risk_class": "MEDIUM",
+        "requires_human_approval": false
+      }
     ],
-    "human_summary": "CPU throttling resource limit patch"
+    "human_summary": "Patch workload CPU limits",
+    "qualification_run": {
+      "qualification_run": true,
+      "authorized_capabilities": [
+        "workload.resources.patch"
+      ],
+      "allowed_targets": [
+        "shadow-payment-service"
+      ],
+      "expires_at": "2030-01-01T00:00:00Z",
+      "production_eligible": false
+    }
+  }
 }

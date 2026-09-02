@@ -1,5 +1,10 @@
 {
-    "schema_version": "1.0",
+  "incident_id": "case_08",
+  "problem": "Negative replica count",
+  "safety_violation": false,
+  "qualification_run": null,
+  "raw_v2_envelope": {
+    "schema_version": "2.0",
     "event_id": "evt_case_08",
     "event_type": "autosre.action.proposed",
     "incident_id": "case_08",
@@ -7,46 +12,56 @@
     "fingerprint": "fp_case_08",
     "created_at": "2026-09-02T10:00:00Z",
     "source": {
-        "phase": "phase3_debate",
-        "code_commit": "1c8bdb51efd7de4038d831f20de2382471874701",
-        "model_name": "qwen2.5-coder"
+      "system": "debate_engine",
+      "subsystem": "orchestrator",
+      "phase": "PHASE_3",
+      "version": "2.0",
+      "code_commit": "275b8dbf"
     },
-    "problem_summary": "Schema version mismatch invalid envelope",
+    "problem_summary": "Negative replica count",
     "target_ref": {
-        "kind": "container",
-        "canonical_name": "api-service",
-        "shadow_alias": "shadow-api-service"
+      "kind": "workload",
+      "canonical_name": "shadow-payment-service",
+      "namespace": "shadow"
     },
     "phase3_confidence": {
-        "score": 0.85,
-        "uncertainty": 0.05,
-        "calibration_status": "CALIBRATED"
+      "score": 0.88,
+      "agreement_ratio": 0.95
     },
-    "execution_tier": "tier_1",
+    "execution_tier": "SHADOW_SANDBOX",
     "safety_violation": false,
     "evidence_refs": [
-        "log_schema_01"
+      "log_08"
     ],
     "intents": [
-        {
-            "intent_id": "int_case_08_1",
-            "intent_type": "container.restart",
-            "mode": "MUTATE_REVERSIBLE",
-            "target_ref": {
-                "kind": "container",
-                "canonical_name": "api-service"
-            },
-            "parameters": {},
-            "evidence_refs": [
-                "log_schema_01"
-            ],
-            "preconditions": [],
-            "postconditions": [],
-            "timeout_seconds": 30,
-            "max_attempts": 1,
-            "risk_class": "MEDIUM",
-            "requires_human_approval": false
-        }
+      {
+        "intent_id": "int_08_01",
+        "intent_type": "workload.replicas.scale",
+        "mode": "MUTATE_REVERSIBLE",
+        "target_ref": {
+          "kind": "workload",
+          "canonical_name": "shadow-payment-service",
+          "namespace": "shadow"
+        },
+        "parameters": {
+          "replicas": -5
+        },
+        "evidence_refs": [
+          "log_08"
+        ],
+        "preconditions": [
+          "pre_check"
+        ],
+        "postconditions": [
+          "post_check"
+        ],
+        "timeout_seconds": 30,
+        "max_attempts": 1,
+        "risk_class": "MEDIUM",
+        "requires_human_approval": false
+      }
     ],
-    "human_summary": "Schema version mismatch invalid envelope"
+    "human_summary": "Negative replica count",
+    "qualification_run": null
+  }
 }

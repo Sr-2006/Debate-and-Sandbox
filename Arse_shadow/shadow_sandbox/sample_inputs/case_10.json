@@ -1,4 +1,21 @@
 {
+  "incident_id": "case_10",
+  "problem": "Simulated verifier failure",
+  "safety_violation": false,
+  "qualification_run": {
+    "qualification_run": true,
+    "run_id": "qual_run_05",
+    "authorized_capabilities": [
+      "container.restart"
+    ],
+    "allowed_targets": [
+      "shadow-user-service"
+    ],
+    "expires_at": "2030-01-01T00:00:00Z",
+    "requested_by": "operator_test",
+    "production_eligible": false
+  },
+  "raw_v2_envelope": {
     "schema_version": "2.0",
     "event_id": "evt_case_10",
     "event_type": "autosre.action.proposed",
@@ -7,49 +24,68 @@
     "fingerprint": "fp_case_10",
     "created_at": "2026-09-02T10:00:00Z",
     "source": {
-        "phase": "phase3_debate",
-        "code_commit": "1c8bdb51efd7de4038d831f20de2382471874701",
-        "model_name": "qwen2.5-coder"
+      "system": "debate_engine",
+      "subsystem": "orchestrator",
+      "phase": "PHASE_3",
+      "version": "2.0",
+      "code_commit": "275b8dbf"
     },
-    "problem_summary": "Postgres setting timeout verifier failure rollback",
+    "problem_summary": "Simulated verifier failure",
     "target_ref": {
-        "kind": "database",
-        "canonical_name": "postgres-db",
-        "shadow_alias": "shadow-postgres-db"
+      "kind": "container",
+      "canonical_name": "shadow-user-service",
+      "namespace": "shadow"
     },
     "phase3_confidence": {
-        "score": 0.85,
-        "uncertainty": 0.05,
-        "calibration_status": "CALIBRATED"
+      "score": 0.88,
+      "agreement_ratio": 0.95
     },
-    "execution_tier": "tier_1",
+    "execution_tier": "SHADOW_SANDBOX",
     "safety_violation": false,
     "evidence_refs": [
-        "log_timeout_01"
+      "log_10"
     ],
     "intents": [
-        {
-            "intent_id": "int_case_10_1",
-            "intent_type": "postgres.setting.update",
-            "mode": "MUTATE_REVERSIBLE",
-            "target_ref": {
-                "kind": "database",
-                "canonical_name": "postgres-db"
-            },
-            "parameters": {
-                "setting_name": "statement_timeout",
-                "value": "10ms"
-            },
-            "evidence_refs": [
-                "log_timeout_01"
-            ],
-            "preconditions": [],
-            "postconditions": [],
-            "timeout_seconds": 30,
-            "max_attempts": 1,
-            "risk_class": "MEDIUM",
-            "requires_human_approval": false
-        }
+      {
+        "intent_id": "int_10_01",
+        "intent_type": "container.restart",
+        "mode": "MUTATE_REVERSIBLE",
+        "target_ref": {
+          "kind": "container",
+          "canonical_name": "shadow-user-service",
+          "namespace": "shadow"
+        },
+        "parameters": {
+          "fail_verification": true
+        },
+        "evidence_refs": [
+          "log_10"
+        ],
+        "preconditions": [
+          "pre_check"
+        ],
+        "postconditions": [
+          "post_check"
+        ],
+        "timeout_seconds": 30,
+        "max_attempts": 1,
+        "risk_class": "MEDIUM",
+        "requires_human_approval": false
+      }
     ],
-    "human_summary": "Postgres setting timeout verifier failure rollback"
+    "human_summary": "Simulated verifier failure",
+    "qualification_run": {
+      "qualification_run": true,
+      "run_id": "qual_run_05",
+      "authorized_capabilities": [
+        "container.restart"
+      ],
+      "allowed_targets": [
+        "shadow-user-service"
+      ],
+      "expires_at": "2030-01-01T00:00:00Z",
+      "requested_by": "operator_test",
+      "production_eligible": false
+    }
+  }
 }

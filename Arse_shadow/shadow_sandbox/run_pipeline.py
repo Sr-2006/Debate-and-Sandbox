@@ -125,74 +125,110 @@ def process_incident(incident_file: str, settle_wait_s: float = 1.0) -> Optional
         "confidence": v2_envelope.get("phase3_confidence", {}).get("score", 0.85) if isinstance(v2_envelope.get("phase3_confidence"), dict) else 0.85
     }
 
-
     remediation_agent = BoundedRemediationAgent()
 
-    # 3. Fault Setup Gate (runs AFTER envelope, target, capability, parameter validation)
-    fault_agent = FaultSelectionAgent()
-    primitive, params = fault_agent.infer_fault_primitive(problem_text, "", target or "")
-
-    fault_setup_ok = True
-    fault_error_msg = ""
-    if primitive and target:
-        try:
-            shadow_target = target if target.startswith("shadow-") else f"shadow-{target}"
-            recover_all(shadow_target)
-            before_state = fault_agent.execute_fault_primitive(shadow_target, primitive, params)
-            log_fault_event(incident_id, primitive, shadow_target, params, before_state, active=True)
-        except Exception as e:
-            fault_setup_ok = False
-            fault_error_msg = f"Fault setup failed for primitive '{primitive}': {str(e)}"
-            print(f"[ORCHESTRATOR] [{incident_id}] {fault_error_msg}")
+    # 3. Preflight Authorization Check BEFORE Fault Injection
+    harness = ExecutionHarness(agent=remediation_agent, persistence=persistence)
+    preflight_ok, preflight_res = harness.preflight(proposal, problem_text, sm)
 
 
-    if not fault_setup_ok:
-        sm.transition_to("SETTING_UP_FAULT", ReasonCode.DIAGNOSED, "Applying fault primitive")
-        sm.transition_to("FAULT_SETUP_FAILED", ReasonCode.FAULT_SETUP_FAILED, fault_error_msg)
+    if not preflight_ok:
+        # Preflight failed (unattested target, unmapped capability, safety veto, insufficient history, missing params, etc.)
+        # Write report and stop execution WITHOUT injecting any fault!
         summary = sm.get_summary()
         outcome = {
             "incident_id": incident_id,
             "run_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "gate_decision": "FAULT_SETUP_FAILED",
-            "confidence_score": 0.0,
-            "human_intervention_required": True,
-            "message": fault_error_msg,
+            "gate_decision": summary["terminal_state"],
+            "confidence_score": preflight_res.get("confidence_eval", {}).get("execution_confidence", 0.0),
+            "human_intervention_required": summary["terminal_state"] != "VERIFIED_RECOVERED",
+            "message": preflight_res.get("detail"),
             "agent_proposal": proposal,
-            "execution_result": None,
+            "execution_result": preflight_res,
             "fault_cleared": False,
             "state_machine_history": summary["history"]
         }
-        return generate_report(outcome)
+        report_path = generate_report(outcome)
+        print(f"[ORCHESTRATOR] [{incident_id}] Preflight blocked ({summary['terminal_state']}). Report: {report_path}")
+        return report_path
 
-    # 4. Attestation & Policy & Confidence & Pre-State & Execution via Harness
-    harness = ExecutionHarness(agent=remediation_agent, persistence=persistence)
-    exec_res = harness.run_proposal(proposal, problem_text, sm)
+    # 4. Fault Injection Setup (runs ONLY AFTER preflight authorization passes!)
+    fault_agent = FaultSelectionAgent()
+    shadow_target = target if target.startswith("shadow-") else f"shadow-{target}"
+    primitive, params = fault_agent.infer_fault_primitive(problem_text, "", target or "")
 
-    # Clean up fault
-    if primitive and target:
-        try:
-            recover_all(target)
-        except Exception as e:
-            pass
+    fault_setup_ok = True
+    fault_error_msg = ""
 
-    # 5. Write Report
+    cleanup_ok = True
+    cleanup_msg = ""
+
+    try:
+        if primitive and target:
+            try:
+                recover_all(shadow_target)
+                before_state = fault_agent.execute_fault_primitive(shadow_target, primitive, params)
+                log_fault_event(incident_id, primitive, shadow_target, params, before_state, active=True)
+            except Exception as e:
+                fault_setup_ok = False
+                fault_error_msg = f"Fault setup failed for primitive '{primitive}': {str(e)}"
+                print(f"[ORCHESTRATOR] [{incident_id}] {fault_error_msg}")
+
+        if not fault_setup_ok:
+            sm.transition_to("SETTING_UP_FAULT", ReasonCode.DIAGNOSED, "Applying fault primitive")
+            sm.transition_to("FAULT_SETUP_FAILED", ReasonCode.FAULT_SETUP_FAILED, fault_error_msg)
+            summary = sm.get_summary()
+            outcome = {
+                "incident_id": incident_id,
+                "run_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "gate_decision": "FAULT_SETUP_FAILED",
+                "confidence_score": 0.0,
+                "human_intervention_required": True,
+                "message": fault_error_msg,
+                "agent_proposal": proposal,
+                "execution_result": None,
+                "fault_cleared": False,
+                "state_machine_history": summary["history"]
+            }
+            return generate_report(outcome)
+
+        # 5. Execute Authorized Remediation & Verification
+        exec_res = harness.execute_authorized(preflight_res, sm)
+
+    finally:
+        # Immutable cleanup in finally block
+        if primitive and target:
+            try:
+                recover_all(shadow_target)
+            except Exception as e:
+                cleanup_ok = False
+                cleanup_msg = f"Cleanup failed for target '{shadow_target}': {str(e)}"
+
+    # 6. Write Final Outcome Report
     summary = sm.get_summary()
+    gate_decision = summary["terminal_state"]
+
+    if not cleanup_ok and gate_decision == "VERIFIED_RECOVERED":
+        gate_decision = "CLEANUP_FAILED"
+        sm.transition_to("CLEANUP_FAILED", ReasonCode.CLEANUP_FAILED, cleanup_msg)
+
     outcome = {
         "incident_id": incident_id,
         "run_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "gate_decision": summary["terminal_state"],
+        "gate_decision": gate_decision,
         "confidence_score": exec_res.get("confidence_eval", {}).get("execution_confidence", 0.0),
-        "human_intervention_required": summary["terminal_state"] != "VERIFIED_RECOVERED",
-        "message": exec_res.get("detail"),
+        "human_intervention_required": gate_decision != "VERIFIED_RECOVERED",
+        "message": exec_res.get("detail") if cleanup_ok else cleanup_msg,
         "agent_proposal": proposal,
         "execution_result": exec_res,
-        "fault_cleared": exec_res.get("fault_cleared", False),
-        "state_machine_history": summary["history"]
+        "fault_cleared": exec_res.get("fault_cleared", False) and cleanup_ok,
+        "state_machine_history": sm.get_summary()["history"]
     }
 
     report_path = generate_report(outcome)
-    print(f"[ORCHESTRATOR] [{incident_id}] Processed ({summary['terminal_state']}). Report: {report_path}")
+    print(f"[ORCHESTRATOR] [{incident_id}] Processed ({gate_decision}). Report: {report_path}")
     return report_path
+
 
 
 
