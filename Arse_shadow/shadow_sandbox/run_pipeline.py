@@ -179,27 +179,7 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
 
     diag_conf = v2_envelope.get("phase3_confidence", {}).get("score", 0.0)
 
-    # 1. Reject unknown/unmapped capability
-    if intent_type == "NO_SUPPORTED_ACTION" or not mapping_valid:
-        sm.transition_to("BLOCKED_UNKNOWN_CAPABILITY", ReasonCode.BLOCKED_UNKNOWN_CAPABILITY, f"Unmapped intent '{intent_type}'")
-        duration_ms = int((time.perf_counter() - start_time) * 1000)
-        return {
-            "status": "NO_SUPPORTED_ACTION",
-            "exact_input": v2_envelope,
-            "target": target_ref,
-            "attestation": {"attempted": False, "attested": False, "reason": "Execution blocked before target attestation"},
-            "before_observations": {},
-            "fault_setup": {"injected": False},
-            "execution": {"attempted": False, "capability": intent_type, "parameters": parameters, "result": {"success": False, "reason": "No supported action"}, "duration_ms": 0},
-            "after_observations": {},
-            "verification": {"passed": False},
-            "rollback": {"attempted": False, "result": None},
-            "cleanup": {"completed": True},
-            "state_history": sm.get_summary()["history"],
-            "duration_ms": duration_ms
-        }
-
-    # 2. Block safety violation / high-risk / human-approval action (MUST precede low confidence branch)
+    # 1. Block safety violation / high-risk / human-approval action (MUST precede capability checks and low confidence branch)
     if mode == "MUTATE_HIGH_RISK" or requires_human_approval:
         sm.transition_to("BLOCKED_SAFETY_VIOLATION", ReasonCode.BLOCKED_SAFETY, f"High risk action {intent_type} requires human approval")
 
@@ -212,6 +192,26 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
             "before_observations": {},
             "fault_setup": {"injected": False},
             "execution": {"attempted": False, "capability": intent_type, "parameters": parameters, "result": {"success": False, "reason": "High risk action requires human review"}, "duration_ms": 0},
+            "after_observations": {},
+            "verification": {"passed": False},
+            "rollback": {"attempted": False, "result": None},
+            "cleanup": {"completed": True},
+            "state_history": sm.get_summary()["history"],
+            "duration_ms": duration_ms
+        }
+
+    # 2. Reject unknown/unmapped capability
+    if intent_type == "NO_SUPPORTED_ACTION" or not mapping_valid:
+        sm.transition_to("BLOCKED_UNKNOWN_CAPABILITY", ReasonCode.BLOCKED_UNKNOWN_CAPABILITY, f"Unmapped intent '{intent_type}'")
+        duration_ms = int((time.perf_counter() - start_time) * 1000)
+        return {
+            "status": "NO_SUPPORTED_ACTION",
+            "exact_input": v2_envelope,
+            "target": target_ref,
+            "attestation": {"attempted": False, "attested": False, "reason": "Execution blocked before target attestation"},
+            "before_observations": {},
+            "fault_setup": {"injected": False},
+            "execution": {"attempted": False, "capability": intent_type, "parameters": parameters, "result": {"success": False, "reason": "No supported action"}, "duration_ms": 0},
             "after_observations": {},
             "verification": {"passed": False},
             "rollback": {"attempted": False, "result": None},

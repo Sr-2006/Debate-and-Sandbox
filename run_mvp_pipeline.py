@@ -1057,16 +1057,12 @@ def run_single_problem(
     try:
         rl_advisor = RLAdvisor()
         rl_advisory_obj = rl_advisor.generate_advisory(
-            envelope=envelope,
+            envelope=copy.deepcopy(envelope),
             p3_res=p3_res,
             run_id=problem_run_id
         )
     except Exception as e:
         rl_error = str(e)
-
-    p3_res["rl_advisory"] = rl_advisory_obj.to_dict() if (rl_advisory_obj and hasattr(rl_advisory_obj, "to_dict")) else {"error": rl_error}
-    if rl_advisory_obj and hasattr(rl_advisory_obj, "to_dict"):
-        envelope["rl_advisory"] = rl_advisory_obj.to_dict()
 
     rl_sec = _build_rl_advisory_section(rl_advisory_obj, rl_error=rl_error)
 
@@ -1113,7 +1109,7 @@ def run_single_problem(
             duration_ms=0.0,
             details={}
         )
-        p4_context = _build_failed_phase4_section(envelope)
+        p4_context = _build_failed_phase4_section(copy.deepcopy(envelope))
     else:
         # Record PHASE4_STARTED immediately before calling run_phase4_pipeline()
         recorder.record(
@@ -1126,7 +1122,7 @@ def run_single_problem(
             details={}
         )
         fault_spec = raw_problem.get("fault_spec")
-        p4_context = run_phase4_pipeline(envelope, fault_spec=fault_spec, is_simulated=simulated_flag)
+        p4_context = run_phase4_pipeline(copy.deepcopy(envelope), fault_spec=fault_spec, is_simulated=simulated_flag)
 
     # 10. Normalize Phase 4 result and record stage outcome events
     p4_sec = _build_phase4_section(p4_context)

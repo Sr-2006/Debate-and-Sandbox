@@ -10,10 +10,14 @@ Phase 3 failure paths, safety-block paths, and RL-unavailable paths.
 import os
 import json
 import hashlib
+import copy
 from pathlib import Path
 from unittest.mock import patch
 import pytest
 
+from contracts.canonical_json import compute_payload_hash
+from contracts.validation import validate_envelope
+from shadow_sandbox.run_pipeline import run_phase4_pipeline
 from run_mvp_pipeline import run_single_problem
 from shadow_sandbox.reports.event_recorder import load_event_schema, get_format_checker
 from jsonschema import Draft7Validator
@@ -351,3 +355,140 @@ def test_safety_block_uses_machine_reason_code(tmp_path, monkeypatch):
     assert "Dangerous" not in exec_ev["reason_code"]
     assert exec_ev["details"]["reason"] == "Dangerous database drop action detected"
     assert exec_ev["details"]["attempted"] is False
+
+
+def test_rl_advisory_does_not_mutate_validated_envelope(tmp_path, monkeypatch):
+    """
+    Verifies that RL advisory generation never mutates the validated Phase 3->4 envelope,
+    the payload hash remains valid and identical, and reports/events match.
+    """
+    monkeypatch.setenv("DEBATE_MOCK_LLM", "1")
+
+    envelope_captured = None
+    import run_mvp_pipeline
+
+    orig_build = run_mvp_pipeline.build_action_proposed
+    def spy_build_action(case_id, p3_res):
+        nonlocal envelope_captured
+        env = orig_build(case_id, p3_res)
+        envelope_captured = copy.deepcopy(env)
+        return env
+
+    with patch("run_mvp_pipeline.build_action_proposed", side_effect=spy_build_action):
+        result = run_single_problem(CASE_01, reports_base_dir=str(tmp_path))
+
+    with open(result["json_report"], "r", encoding="utf-8") as f:
+        rep = json.load(f)
+
+    handoff_env = rep["phase_3_to_4_handoff"]["exact_envelope"]
+    p4_env = rep["phase_4"]["exact_input"]
+
+    # Assert captured envelope equals handoff envelope and phase 4 input
+    assert handoff_env == envelope_captured
+    assert p4_env == envelope_captured
+
+    # Assert rl_advisory is not in the execution envelope
+    assert "rl_advisory" not in handoff_env
+    assert "rl_advisory" not in p4_env
+
+    # Recompute payload hash over envelope without payload_hash
+    env_copy = copy.deepcopy(handoff_env)
+    stored_hash = env_copy.pop("payload_hash", None)
+    recomputed_hash = compute_payload_hash(env_copy)
+    assert recomputed_hash == stored_hash
+    assert recomputed_hash == rep["phase_3_to_4_handoff"]["payload_hash"]
+
+    # Validate envelope schema
+    is_valid, errs, _ = validate_envelope(handoff_env)
+    assert is_valid is True, f"Validation errors: {errs}"
+
+    # Assert event ENVELOPE_VALIDATED payload_hash matches report
+    with open(result["events_report"], "r", encoding="utf-8") as f:
+        events = [json.loads(line.strip()) for line in f if line.strip()]
+
+    env_val_ev = next(e for e in events if e["event"] == "ENVELOPE_VALIDATED")
+    assert env_val_ev["details"]["payload_hash"] == rep["phase_3_to_4_handoff"]["payload_hash"]
+
+
+def test_safety_veto_precedes_unknown_capability(monkeypatch):
+    """
+    Verifies that a safety violation or human approval requirement produces
+    HUMAN_REVIEW_REQUIRED even when intent_type is NO_SUPPORTED_ACTION or unknown.
+    """
+    monkeypatch.setenv("DEBATE_MOCK_LLM", "1")
+
+    p3_res = {
+        "solution": {
+            "problem_summary": "Dangerous action blocked by safety",
+            "root_cause": "Forbidden command requested",
+            "primary_component": "user-service",
+            "evidence_refs": ["log_01"],
+            "confidence": 0.85,
+            "intent": {
+                "intent_type": "NO_SUPPORTED_ACTION",
+                "mode": "OBSERVE",
+                "target_ref": {
+                    "kind": "container",
+                    "canonical_name": "user-service"
+                },
+                "parameters": {},
+                "requires_human_approval": True
+            },
+            "human_recommendation": "Manual intervention required"
+        },
+        "confidence_score": 85.0,
+        "execution_tier": "TIER_3_HUMAN_INTERVENTION",
+        "safety_violation": True
+    }
+    from debate.action_publisher import build_action_proposed
+    generic_envelope = build_action_proposed("test_safety_precedence", p3_res)
+
+    with patch("shadow_sandbox.run_pipeline.check_attestation") as mock_attest, \
+         patch("shadow_sandbox.run_pipeline.get_executor") as mock_exec, \
+         patch("shadow_sandbox.run_pipeline.get_verifier") as mock_ver:
+        result = run_phase4_pipeline(generic_envelope, is_simulated=True)
+
+    assert result["status"] == "HUMAN_REVIEW_REQUIRED"
+    assert result["attestation"]["attempted"] is False
+    assert result["execution"]["attempted"] is False
+    assert mock_attest.call_count == 0
+    assert mock_exec.call_count == 0
+    assert mock_ver.call_count == 0
+
+
+def test_safe_unknown_capability_remains_no_supported_action(monkeypatch):
+    """
+    Verifies that when safety is clean, unknown / NO_SUPPORTED_ACTION intent
+    returns NO_SUPPORTED_ACTION without attempting execution.
+    """
+    monkeypatch.setenv("DEBATE_MOCK_LLM", "1")
+
+    p3_res = {
+        "solution": {
+            "problem_summary": "Unknown capability problem",
+            "root_cause": "Unknown capability required",
+            "primary_component": "user-service",
+            "evidence_refs": ["log_01"],
+            "confidence": 0.85,
+            "intent": {
+                "intent_type": "NO_SUPPORTED_ACTION",
+                "mode": "OBSERVE",
+                "target_ref": {
+                    "kind": "container",
+                    "canonical_name": "user-service"
+                },
+                "parameters": {},
+                "requires_human_approval": False
+            },
+            "human_recommendation": "No supported action"
+        },
+        "confidence_score": 85.0,
+        "execution_tier": "TIER_1_AUTONOMOUS_EXECUTION",
+        "safety_violation": False
+    }
+    from debate.action_publisher import build_action_proposed
+    generic_envelope = build_action_proposed("test_safe_unknown", p3_res)
+
+    result = run_phase4_pipeline(generic_envelope, is_simulated=True)
+    assert result["status"] == "NO_SUPPORTED_ACTION"
+    assert result["execution"]["attempted"] is False
