@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LearningEpisodeV1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "episode_id",
+    "incident_id",
+    "run_id",
+    "payload_hash",
+    "created_at",
+    "context",
+    "proposal",
+    "advisory",
+    "phase4",
+    "learning"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "episode_id": {
+      "type": "string",
+      "pattern": "^ep_"
+    },
+    "incident_id": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "payload_hash": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "context": {
+      "type": "object",
+      "required": ["feature_schema_version", "features", "feature_vector", "feature_hash"],
+      "properties": {
+        "feature_schema_version": { "type": "string" },
+        "features": { "type": "object" },
+        "feature_vector": {
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "feature_hash": { "type": "string" }
+      }
+    },
+    "proposal": {
+      "type": "object",
+      "required": ["intent_type", "target_kind", "mode", "risk_class"],
+      "properties": {
+        "intent_type": { "type": "string" },
+        "target_kind": { "type": "string" },
+        "mode": { "type": "string" },
+        "risk_class": { "type": "string" }
+      }
+    },
+    "advisory": {
+      "type": "object"
+    },
+    "phase4": {
+      "type": "object",
+      "required": ["status", "simulated", "attested", "execution_success", "verification_passed", "rollback_attempted", "rollback_confirmed"],
+      "properties": {
+        "status": { "type": "string" },
+        "simulated": { "type": "boolean" },
+        "attested": { "type": "boolean" },
+        "execution_success": { "type": "boolean" },
+        "verification_passed": { "type": "boolean" },
+        "rollback_attempted": { "type": "boolean" },
+        "rollback_confirmed": { "type": "boolean" }
+      }
+    },
+    "learning": {
+      "type": "object",
+      "required": ["eligible", "eligibility_reason", "reward", "sample_weight", "behavior_action", "behavior_propensity"],
+      "properties": {
+        "eligible": { "type": "boolean" },
+        "eligibility_reason": { "type": "string" },
+        "reward": { "type": ["number", "null"] },
+        "sample_weight": { "type": "number" },
+        "behavior_action": {
+          "type": "string",
+          "enum": ["ACCEPT_PROPOSAL", "OBSERVE_FIRST", "REQUIRE_HUMAN_REVIEW", "ABSTAIN"]
+        },
+        "behavior_propensity": { "type": ["number", "null"] }
+      }
+    }
+  }
+}

@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ main, final ]
 
+env:
+  DEBATE_MOCK_LLM: "1"
+  RL_OPERATING_MODE: "SHADOW"
+  RL_LAPTOP1_TRANSPORT: "disabled"
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -25,6 +30,11 @@ jobs:
       - name: Run MVP Unit Tests
         run: |
           python -m pytest -q tests/test_mvp_unit.py -x -vv
+
+      - name: Run RL Unit Tests
+        run: |
+          python -m pytest -q rl_engine/tests
+
       - name: Run MVP E2E Tests
         run: |
           python -m pytest -q tests/test_mvp_e2e.py
@@ -32,3 +42,7 @@ jobs:
       - name: Run Full MVP 22-Case Pipeline
         run: |
           python run_mvp_pipeline.py --all
+
+      - name: Validate CI Safety Constraints
+        run: |
+          python -m rl_engine.cli validate-ci-safety

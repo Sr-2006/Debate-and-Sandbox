@@ -27,7 +27,9 @@ def render_markdown_report(ctx: Dict[str, Any]) -> str:
     p3 = ctx.get("phase_3", {})
     handoff = ctx.get("phase_3_to_4_handoff", {})
     p4 = ctx.get("phase_4", {})
+    learning = ctx.get("learning", {})
     summary = ctx.get("final_summary", {})
+
 
     agents = p3.get("agents", {})
     optimist = agents.get("optimist", {})
@@ -112,9 +114,24 @@ def render_markdown_report(ctx: Dict[str, Any]) -> str:
         f"- **Outcome Enum**: `{summary.get('outcome', 'UNKNOWN')}`\n",
         "## 16. Limitations and Human Recommendation",
         f"- **Recommendation**: {summary.get('production_recommendation', 'Human review required')}",
-        f"- **Limitations**: {summary.get('limitations', [])}\n"
+        f"- **Limitations**: {summary.get('limitations', [])}\n",
+        "## 17. RL Advisory and Learning Feedback",
+        f"- **Policy & Model Version**: `{learning.get('advisory', {}).get('policy', {}).get('policy_name', 'safe_disjoint_linucb')}` (`{learning.get('advisory', {}).get('policy', {}).get('model_version', 'cold-start')}`)",
+        f"- **Operating Mode**: `{learning.get('advisory', {}).get('policy', {}).get('operating_mode', 'SHADOW')}`",
+        f"- **Recommendation**: `{learning.get('advisory', {}).get('recommendation', 'ABSTAIN')}`",
+        f"- **Influence Allowed**: `{learning.get('advisory', {}).get('influence_allowed', False)}`",
+        f"- **Action Scores**: `{learning.get('advisory', {}).get('action_scores', {})}`",
+        f"- **Uncertainty**: `{learning.get('advisory', {}).get('uncertainty', 0.5)}`",
+        f"- **Sample Size**: `{learning.get('advisory', {}).get('sample_size', 0)}`",
+        f"- **Cold-Start Flag**: `{learning.get('advisory', {}).get('cold_start', True)}`",
+        f"- **Learning Eligibility**: `{learning.get('episode', {}).get('learning', {}).get('eligible', False)}`",
+        f"- **Reward**: `{learning.get('episode', {}).get('learning', {}).get('reward', None)}`",
+        f"- **Eligibility Reason**: `{learning.get('episode', {}).get('learning', {}).get('eligibility_reason', 'N/A')}`",
+        f"- **Feature Hash**: `{learning.get('advisory', {}).get('feature_hash', 'N/A')}`",
+        f"- **Episode ID**: `{learning.get('episode', {}).get('episode_id', 'N/A')}`\n"
     ]
     return "\n".join(lines)
+
 
 
 def generate_mvp_report(context: Dict[str, Any], reports_base_dir: Optional[str] = None) -> Tuple[str, str]:

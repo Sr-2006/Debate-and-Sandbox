@@ -47,9 +47,68 @@ def _init_schema(conn: sqlite3.Connection):
                 incident_id TEXT NOT NULL
             );
         """)
+        # RL Advisories
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS rl_advisories (
+                advisory_id TEXT PRIMARY KEY,
+                incident_id TEXT NOT NULL,
+                run_id TEXT UNIQUE NOT NULL,
+                payload_hash TEXT NOT NULL,
+                policy_version TEXT NOT NULL,
+                model_version TEXT NOT NULL,
+                operating_mode TEXT NOT NULL,
+                recommendation TEXT NOT NULL,
+                scores_json TEXT NOT NULL,
+                uncertainty REAL NOT NULL,
+                sample_size INTEGER NOT NULL,
+                cold_start INTEGER NOT NULL,
+                influence_allowed INTEGER NOT NULL,
+                feature_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+        """)
+        # Learning Episodes
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS learning_episodes (
+                episode_id TEXT PRIMARY KEY,
+                incident_id TEXT NOT NULL,
+                run_id TEXT UNIQUE NOT NULL,
+                payload_hash TEXT NOT NULL,
+                capability TEXT NOT NULL,
+                target_kind TEXT NOT NULL,
+                feature_schema_version TEXT NOT NULL,
+                features_json TEXT NOT NULL,
+                feature_vector_json TEXT NOT NULL,
+                feature_hash TEXT NOT NULL,
+                advisory_action TEXT NOT NULL,
+                behavior_action TEXT NOT NULL,
+                phase4_status TEXT NOT NULL,
+                simulated INTEGER NOT NULL,
+                eligible INTEGER NOT NULL,
+                eligibility_reason TEXT NOT NULL,
+                reward REAL,
+                sample_weight REAL NOT NULL,
+                created_at TEXT NOT NULL
+            );
+        """)
+        # RL Models
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS rl_models (
+                model_version TEXT PRIMARY KEY,
+                policy_name TEXT NOT NULL,
+                feature_schema_version TEXT NOT NULL,
+                training_episode_count INTEGER NOT NULL,
+                training_cutoff TEXT NOT NULL,
+                artifact_path TEXT NOT NULL,
+                artifact_hash TEXT NOT NULL,
+                evaluation_json TEXT NOT NULL,
+                promoted INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            );
+        """)
 
 class SandboxPersistence:
-    """SQLite-backed persistent store for claims, deduplication, and execution outcomes."""
+    """SQLite-backed persistent store for claims, deduplication, execution outcomes, and RL telemetry."""
 
     def __init__(self, db_path: Optional[Path] = None):
         self.db_path = db_path or DB_PATH
@@ -96,3 +155,10 @@ class SandboxPersistence:
         successes = row[1] or 0
         failures = total - successes
         return {"total": total, "successes": successes, "failures": failures}
+
+
+def get_capability_stats(capability: str, target_kind: str = "container", db_path: Optional[Path] = None) -> Dict[str, int]:
+    p = SandboxPersistence(db_path)
+    res = p.get_capability_history(capability, target_kind)
+    return {"total_runs": res["total"], "successes": res["successes"], "failures": res["failures"]}
+

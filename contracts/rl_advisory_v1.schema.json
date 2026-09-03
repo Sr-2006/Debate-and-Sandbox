@@ -1,0 +1,114 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RLAdvisoryV1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "advisory_id",
+    "incident_id",
+    "run_id",
+    "created_at",
+    "policy",
+    "proposal",
+    "recommendation",
+    "action_scores",
+    "uncertainty",
+    "sample_size",
+    "cold_start",
+    "influence_allowed",
+    "reason_codes",
+    "feature_schema_version",
+    "feature_hash",
+    "latency_ms"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "advisory_id": {
+      "type": "string",
+      "pattern": "^adv_"
+    },
+    "incident_id": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "policy": {
+      "type": "object",
+      "required": ["policy_name", "policy_version", "model_version", "operating_mode"],
+      "properties": {
+        "policy_name": { "type": "string" },
+        "policy_version": { "type": "string" },
+        "model_version": { "type": "string" },
+        "operating_mode": {
+          "type": "string",
+          "enum": ["SHADOW", "ADVISORY"]
+        }
+      }
+    },
+    "proposal": {
+      "type": "object",
+      "required": ["intent_type", "target_kind", "mode", "risk_class"],
+      "properties": {
+        "intent_type": { "type": "string" },
+        "target_kind": { "type": "string" },
+        "mode": { "type": "string" },
+        "risk_class": { "type": "string" }
+      }
+    },
+    "recommendation": {
+      "type": "string",
+      "enum": ["ACCEPT_PROPOSAL", "OBSERVE_FIRST", "REQUIRE_HUMAN_REVIEW", "ABSTAIN"]
+    },
+    "action_scores": {
+      "type": "object",
+      "required": ["ACCEPT_PROPOSAL", "OBSERVE_FIRST", "REQUIRE_HUMAN_REVIEW", "ABSTAIN"],
+      "properties": {
+        "ACCEPT_PROPOSAL": { "type": ["number", "null"] },
+        "OBSERVE_FIRST": { "type": ["number", "null"] },
+        "REQUIRE_HUMAN_REVIEW": { "type": ["number", "null"] },
+        "ABSTAIN": { "type": ["number", "null"] }
+      }
+    },
+    "estimated_success_probability": {
+      "type": ["number", "null"],
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "uncertainty": {
+      "type": "number",
+      "minimum": 0.0
+    },
+    "sample_size": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cold_start": {
+      "type": "boolean"
+    },
+    "influence_allowed": {
+      "type": "boolean"
+    },
+    "reason_codes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "feature_schema_version": {
+      "type": "string"
+    },
+    "feature_hash": {
+      "type": "string"
+    },
+    "latency_ms": {
+      "type": "number",
+      "minimum": 0.0
+    }
+  }
+}

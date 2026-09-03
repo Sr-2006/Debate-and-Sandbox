@@ -8,3 +8,5 @@ debate/output/*
 reports/*
 Arse_shadow/shadow_sandbox/reports/*
 output/*
+rl_engine/models/*.json
+rl_engine/outbox/*.json

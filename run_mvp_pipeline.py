@@ -38,6 +38,10 @@ from contracts.canonical_json import compute_payload_hash
 from contracts.validation import validate_envelope
 from shadow_sandbox.run_pipeline import run_phase4_pipeline
 from shadow_sandbox.reports.report_generator import generate_mvp_report
+from rl_engine.advisor import RLAdvisor
+from rl_engine.episode_builder import build_learning_episode
+from rl_engine.episode_store import EpisodeStore
+
 
 
 def run_single_problem(problem_path: str, reports_base_dir: Optional[str] = None) -> Dict[str, Any]:
@@ -107,6 +111,29 @@ def run_single_problem(problem_path: str, reports_base_dir: Optional[str] = None
         "duration_ms": int(p3_res.get("total_latency_seconds", 0) * 1000)
     }
 
+    # 1.5 Generate RL Advisory in SHADOW mode
+    rl_advisor = RLAdvisor()
+    rl_advisory_obj = rl_advisor.generate_advisory(
+        envelope={
+            "incident_id": incident_id,
+            "phase3_confidence": {"score": confidence_score},
+            "safety_violation": bool(p3_res.get("safety_violation", False)),
+            "evidence_refs": sol.get("evidence_refs", []),
+            "target_ref": {"kind": "container", "canonical_name": sol.get("intent", {}).get("target_ref", {}).get("canonical_name", "shadow-service")},
+            "intents": [sol.get("intent", {})] if sol.get("intent") else []
+        },
+        p3_res=p3_res,
+        run_id=run_id
+    )
+    p3_res["rl_advisory"] = rl_advisory_obj.to_dict()
+
+    p3_context["rl_advisory"] = {
+        "recommendation": rl_advisory_obj.recommendation,
+        "operating_mode": rl_advisory_obj.policy.operating_mode,
+        "influence_allowed": rl_advisory_obj.influence_allowed,
+        "reason_codes": rl_advisory_obj.reason_codes
+    }
+
     # 2. Construct Validated V2 Envelope Handoff
     envelope = build_action_proposed(incident_id, p3_res)
     payload_hash = envelope.get("payload_hash") or compute_payload_hash(envelope)
@@ -153,11 +180,23 @@ def run_single_problem(problem_path: str, reports_base_dir: Optional[str] = None
         fault_spec = raw_problem.get("fault_spec")
         p4_context = run_phase4_pipeline(envelope, fault_spec=fault_spec)
 
+    # 3.5 Build & Store Learning Episode
+    learning_episode_obj = build_learning_episode(
+        advisory=rl_advisory_obj,
+        envelope=envelope,
+        phase4_result=p4_context,
+        run_id=run_id
+    )
+    ep_store = EpisodeStore()
+    ep_store.save_advisory(rl_advisory_obj)
+    ep_store.save_episode(learning_episode_obj)
+
     end_dt = datetime.now(timezone.utc)
     completed_at = end_dt.isoformat()
 
     final_outcome = p4_context.get("status", "PHASE3_FAILED" if p3_status == "PHASE3_FAILED" else "UNKNOWN")
     problem_resolved = final_outcome == "SANDBOX_VERIFIED"
+
 
 
     final_summary = {
@@ -181,8 +220,16 @@ def run_single_problem(problem_path: str, reports_base_dir: Optional[str] = None
         "phase_3": p3_context,
         "phase_3_to_4_handoff": handoff_context,
         "phase_4": p4_context,
+        "learning": {
+            "advisory": rl_advisory_obj.to_dict(),
+            "episode": learning_episode_obj.to_dict(),
+            "model_update": {
+                "triggered": False
+            }
+        },
         "final_summary": final_summary
     }
+
 
     # 4. Generate JSON and Markdown Reports
     json_path, md_path = generate_mvp_report(report_context, reports_base_dir=reports_base_dir)

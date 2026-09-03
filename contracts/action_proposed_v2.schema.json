@@ -159,6 +159,10 @@
     },
     "human_summary": {
       "type": "string"
+    },
+    "rl_advisory": {
+      "type": ["object", "null"]
     }
   }
 }
+

@@ -254,8 +254,11 @@ def build_action_proposed(
         "human_summary": env.human_summary
     }
 
+    if result.get("rl_advisory"):
+        dict_repr["rl_advisory"] = result.get("rl_advisory")
 
     dict_repr["payload_hash"] = compute_payload_hash(dict_repr)
+
     
     # Enforce schema validation before returning/publishing
     is_valid, errors, reason_code = validate_envelope(dict_repr)

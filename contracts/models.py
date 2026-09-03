@@ -54,6 +54,27 @@ class Phase3Confidence:
 
 
 @dataclass
+class RLAdvisory:
+    schema_version: str
+    advisory_id: str
+    incident_id: str
+    run_id: str
+    created_at: str
+    policy: Dict[str, Any]
+    proposal: Dict[str, Any]
+    recommendation: str  # ACCEPT_PROPOSAL | OBSERVE_FIRST | REQUIRE_HUMAN_REVIEW | ABSTAIN
+    action_scores: Dict[str, Optional[float]]
+    uncertainty: float
+    sample_size: int
+    cold_start: bool
+    influence_allowed: bool
+    reason_codes: List[str]
+    feature_schema_version: str
+    feature_hash: str
+    latency_ms: float
+    estimated_success_probability: Optional[float] = None
+
+@dataclass
 class ActionProposedV2Envelope:
     schema_version: str
     event_id: str
@@ -71,6 +92,8 @@ class ActionProposedV2Envelope:
     evidence_refs: List[str]
     intents: List[Intent]
     human_summary: str
+    rl_advisory: Optional[Dict[str, Any]] = None
+
 
     @classmethod
     def create_default(
