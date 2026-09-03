@@ -13,6 +13,7 @@ import json
 import copy
 import uuid
 import hashlib
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
@@ -45,7 +46,14 @@ def get_format_checker() -> FormatChecker:
         try:
             if "T" not in val:
                 return False
-            datetime.fromisoformat(val.replace("Z", "+00:00"))
+            if val.endswith("Z"):
+                dt = datetime.fromisoformat(val[:-1] + "+00:00")
+            else:
+                dt = datetime.fromisoformat(val)
+            if dt.tzinfo is None:
+                return False
+            if dt.utcoffset().total_seconds() != 0:
+                return False
             return True
         except Exception:
             return False
@@ -103,24 +111,49 @@ class Phase34EventRecorder:
         """
         now_dt = datetime.now(timezone.utc)
         if timestamp is not None:
+            if not isinstance(timestamp, str):
+                raise EventContractError("timestamp must be a string")
             try:
-                event_dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                if "T" not in timestamp:
+                    raise ValueError("Missing 'T' in ISO timestamp")
+                if timestamp.endswith("Z"):
+                    event_dt = datetime.fromisoformat(timestamp[:-1] + "+00:00")
+                else:
+                    event_dt = datetime.fromisoformat(timestamp)
+                if event_dt.tzinfo is None:
+                    raise EventContractError(f"Naive timestamp rejected (must be UTC): {timestamp}")
+                if event_dt.utcoffset().total_seconds() != 0:
+                    raise EventContractError(f"Non-UTC timestamp offset rejected: {timestamp}")
+            except EventContractError:
+                raise
             except Exception as e:
                 raise EventContractError(f"Invalid timestamp format: {timestamp}") from e
+            timestamp = event_dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
         else:
             if self._last_timestamp and now_dt < self._last_timestamp:
                 event_dt = self._last_timestamp
             else:
                 event_dt = now_dt
-            timestamp = event_dt.isoformat()
+            timestamp = event_dt.isoformat().replace("+00:00", "Z")
 
         if self._last_timestamp and event_dt < self._last_timestamp:
             raise EventContractError(
                 f"Timestamp violation: event timestamp {timestamp} is earlier than previous {self._last_timestamp.isoformat()}"
             )
 
+        # Explicit duration validation using math.isfinite()
+        if duration_ms is None:
+            dur = 0.0
+        elif isinstance(duration_ms, bool) or not isinstance(duration_ms, (int, float)):
+            raise EventContractError(f"duration_ms must be numeric, got {type(duration_ms).__name__}")
+        elif not math.isfinite(duration_ms):
+            raise EventContractError(f"duration_ms must be finite (not NaN or Inf), got {duration_ms}")
+        elif duration_ms < 0.0:
+            raise EventContractError(f"duration_ms must be non-negative, got {duration_ms}")
+        else:
+            dur = float(duration_ms)
+
         seq = len(self.events) + 1
-        dur = max(0.0, float(duration_ms)) if duration_ms is not None else 0.0
         det = details if isinstance(details, dict) else {}
 
         raw_event = {
@@ -150,6 +183,11 @@ class Phase34EventRecorder:
         if errors:
             err_msgs = [f"JSON Schema error at {e.json_path}: {e.message}" for e in errors]
             raise EventContractError(f"Event contract validation failed: {err_msgs}")
+
+        det_str = json.dumps(event.get("details", {}))
+        for sensitive_pattern in [".ssh", "id_rsa", "id_ed25519", "aws_secret_access_key", "password="]:
+            if sensitive_pattern.lower() in det_str.lower():
+                raise EventContractError(f"Details must not contain sensitive environment paths or credentials: {sensitive_pattern}")
 
     def validate_all(self) -> None:
         """

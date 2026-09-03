@@ -168,24 +168,47 @@ def test_atomic_write_failure_cleans_tmp_and_preserves_earlier_log(tmp_path):
 
 
 def test_empty_identifers_rejected():
-    with pytest.raises(EventContractError):
-        Phase34EventRecorder("", "run", "case")
-    with pytest.raises(EventContractError):
-        Phase34EventRecorder("verif", "", "case")
-    with pytest.raises(EventContractError):
-        Phase34EventRecorder("verif", "run", "")
+    with pytest.raises(EventContractError, match="verification_run_id must not be empty"):
+        Phase34EventRecorder("", "run_1", "case_01")
+    with pytest.raises(EventContractError, match="problem_run_id must not be empty"):
+        Phase34EventRecorder("verify_1", "  ", "case_01")
+    with pytest.raises(EventContractError, match="case_id must not be empty"):
+        Phase34EventRecorder("verify_1", "run_1", "")
 
 
 def test_no_sensitive_data_in_details():
-    rec = Phase34EventRecorder("verify_sec", "run_sec", "case_sec")
-    ev = rec.record(
-        phase="INPUT",
-        component="coordinator",
-        event="PROBLEM_RECEIVED",
-        status="COMPLETED",
-        reason_code="PROBLEM_LOADED",
-        details={"case_id": "case_sec", "severity": "HIGH"}
-    )
-    serialized = json.dumps(ev["details"])
-    for sensitive in ["password", "token", "secret", "private_key", "/home/", "C:\\Users"]:
-        assert sensitive not in serialized.lower()
+    rec = Phase34EventRecorder("verify_sens", "run_sens", "case_sens")
+    with pytest.raises(EventContractError, match="Details must not contain sensitive environment paths"):
+        rec.record("PHASE_3", "scoring_engine", "CONFIDENCE_CALCULATED", "SUCCESS", details={"path": "/home/user/.ssh/id_rsa"})
+
+
+def test_negative_duration_rejected():
+    rec = Phase34EventRecorder("verify_dur", "run_dur", "case_dur")
+    with pytest.raises(EventContractError, match="duration_ms must be non-negative"):
+        rec.record("INPUT", "coordinator", "PROBLEM_RECEIVED", "COMPLETED", duration_ms=-0.01)
+
+
+def test_non_finite_duration_rejected():
+    rec = Phase34EventRecorder("verify_dur_finite", "run_dur_finite", "case_dur_finite")
+    for bad_dur in [float("nan"), float("inf"), float("-inf")]:
+        with pytest.raises(EventContractError, match="duration_ms must be finite"):
+            rec.record("INPUT", "coordinator", "PROBLEM_RECEIVED", "COMPLETED", duration_ms=bad_dur)
+
+
+def test_non_utc_timestamp_rejected():
+    rec = Phase34EventRecorder("verify_utc", "run_utc", "case_utc")
+    # Reject naive timestamp
+    with pytest.raises(EventContractError, match="Naive timestamp rejected"):
+        rec.record("INPUT", "coordinator", "PROBLEM_RECEIVED", "COMPLETED", timestamp="2026-09-03T12:00:00")
+    # Reject non-UTC offsets
+    with pytest.raises(EventContractError, match="Non-UTC timestamp offset rejected"):
+        rec.record("INPUT", "coordinator", "PROBLEM_RECEIVED", "COMPLETED", timestamp="2026-09-03T12:00:00+05:30")
+    with pytest.raises(EventContractError, match="Non-UTC timestamp offset rejected"):
+        rec.record("INPUT", "coordinator", "PROBLEM_RECEIVED", "COMPLETED", timestamp="2026-09-03T12:00:00-04:00")
+
+    # Accept UTC Z and +00:00, normalizing both to Z
+    ev1 = rec.record("INPUT", "coordinator", "PROBLEM_RECEIVED", "COMPLETED", timestamp="2026-09-03T12:00:00Z")
+    assert ev1["timestamp"] == "2026-09-03T12:00:00Z"
+
+    ev2 = rec.record("PHASE_3", "debate_manager", "PHASE3_STARTED", "STARTED", timestamp="2026-09-03T12:00:01+00:00")
+    assert ev2["timestamp"] == "2026-09-03T12:00:01Z"

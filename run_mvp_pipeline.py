@@ -610,8 +610,8 @@ def _build_failed_phase4_section(envelope: Optional[dict] = None) -> dict:
     }
     return {
         "status": "NOT_RUN",
-        "started_at": datetime.now(timezone.utc).isoformat(),
-        "completed_at": datetime.now(timezone.utc).isoformat(),
+        "started_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "completed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "duration_ms": 0.0,
         "exact_input": envelope,
         "target": envelope.get("target_ref", {}) if isinstance(envelope, dict) else {},
@@ -624,7 +624,7 @@ def _build_failed_phase4_section(envelope: Optional[dict] = None) -> dict:
         "rollback": copy.deepcopy(not_run_stage),
         "cleanup": copy.deepcopy(not_run_stage),
         "state_history": [
-            {"timestamp": datetime.now(timezone.utc).isoformat(), "state": "NOT_RUN", "reason_code": "PHASE3_FAILED", "message": reason_msg}
+            {"timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "state": "NOT_RUN", "reason_code": "PHASE3_FAILED", "message": reason_msg}
         ],
         "reason_codes": ["PHASE3_FAILED"]
     }
@@ -650,10 +650,13 @@ def _build_phase4_section(p4_res: dict) -> dict:
     state_hist = p4_res.get("state_history", [])
     reason_codes = p4_res.get("reason_codes", [status])
 
+    started_at_str = str(p4_res.get("started_at") or datetime.now(timezone.utc).isoformat()).replace("+00:00", "Z")
+    completed_at_str = str(p4_res.get("completed_at") or datetime.now(timezone.utc).isoformat()).replace("+00:00", "Z")
+
     return {
         "status": status,
-        "started_at": p4_res.get("started_at") or datetime.now(timezone.utc).isoformat(),
-        "completed_at": p4_res.get("completed_at") or datetime.now(timezone.utc).isoformat(),
+        "started_at": started_at_str,
+        "completed_at": completed_at_str,
         "duration_ms": max(0.0, float(p4_res.get("duration_ms", 0))),
         "exact_input": exact_input,
         "target": target,
@@ -829,7 +832,7 @@ def run_single_problem(
 ) -> Dict[str, Any]:
     """Runs one problem end-to-end through Phase 3, Phase 4, and generates JSON + Markdown reports via canonical producer."""
     start_dt = datetime.now(timezone.utc)
-    started_at = start_dt.isoformat()
+    started_at = start_dt.isoformat().replace("+00:00", "Z")
     start_time = time.perf_counter()
 
     verif_id = verification_run_id or f"verify_{uuid.uuid4().hex}"
@@ -855,110 +858,15 @@ def run_single_problem(
     print(f"  RUNNING MVP PIPELINE: [{case_id}] ({os.path.basename(problem_path)})")
     print(f"=======================================================\n")
 
-    # 1. Run Phase 3 Debate
-    dm = DebateManager()
-    p3_res = dm.run(raw_problem)
-    sol = p3_res.get("solution", {})
-    p3_status = p3_res.get("phase3_status", "COMPLETED")
-    conf_raw = p3_res.get("confidence_score")
-    if conf_raw is not None and isinstance(conf_raw, (int, float)):
-        confidence_score = float(conf_raw) / 100.0 if float(conf_raw) > 1.0 else float(conf_raw)
-    else:
-        confidence_score = 0.0
-
-    # 1.5 Generate RL Advisory under try/except boundary
-    rl_advisory_obj = None
-    rl_error = None
-    try:
-        rl_advisor = RLAdvisor()
-        rl_advisory_obj = rl_advisor.generate_advisory(
-            envelope={
-                "incident_id": case_id,
-                "phase3_confidence": {"score": confidence_score},
-                "safety_violation": bool(p3_res.get("safety_violation", False)),
-                "evidence_refs": sol.get("evidence_refs", []),
-                "target_ref": {"kind": "container", "canonical_name": sol.get("intent", {}).get("target_ref", {}).get("canonical_name", "shadow-service")},
-                "intents": [sol.get("intent", {})] if sol.get("intent") else []
-            },
-            p3_res=p3_res,
-            run_id=problem_run_id
-        )
-    except Exception as e:
-        rl_error = str(e)
-
-    p3_res["rl_advisory"] = rl_advisory_obj.to_dict() if (rl_advisory_obj and hasattr(rl_advisory_obj, "to_dict")) else {"error": rl_error}
-
-    # 2. Construct Validated V2 Envelope Handoff
-    envelope = build_action_proposed(case_id, p3_res)
-    payload_hash = envelope.get("payload_hash") or compute_payload_hash(envelope)
-    is_valid, errs, _ = validate_envelope(envelope)
-
-    # 3. Run Phase 4 Shadow Sandbox
-    simulated_flag = bool(os.environ.get("DEBATE_MOCK_LLM") == "1") or bool(raw_problem.get("simulated"))
-    if p3_status == "PHASE3_FAILED":
-        p4_context = _build_failed_phase4_section(envelope)
-    else:
-        fault_spec = raw_problem.get("fault_spec")
-        p4_context = run_phase4_pipeline(envelope, fault_spec=fault_spec, is_simulated=simulated_flag)
-
-    # 3.5 Build & Store Learning Episode under try/except boundary
-    episode_db_stored = False
-    learning_episode_obj = None
-    try:
-        learning_episode_obj = build_learning_episode(
-            advisory=rl_advisory_obj,
-            envelope=envelope,
-            phase4_result=p4_context,
-            run_id=problem_run_id
-        )
-        ep_store = EpisodeStore()
-        if rl_advisory_obj:
-            try:
-                ep_store.save_advisory(rl_advisory_obj)
-            except Exception:
-                pass
-        if learning_episode_obj:
-            episode_db_stored = bool(ep_store.save_episode(learning_episode_obj))
-    except Exception:
-        episode_db_stored = False
-
-    end_dt = datetime.now(timezone.utc)
-    completed_at = end_dt.isoformat()
-    duration_ms = (time.perf_counter() - start_time) * 1000.0
-
-    # Build frozen canonical report sections
-    run_sec = _build_run_section(verif_id, problem_run_id, started_at, completed_at, duration_ms, simulated_flag)
-    prob_sec = _build_problem_section(case_id, problem_path, raw_problem)
-    p3_sec = _build_phase3_section(p3_res, dm, sol)
-    handoff_sec = _build_handoff_section(envelope, is_valid, errs)
-    rl_sec = _build_rl_advisory_section(rl_advisory_obj, rl_error=rl_error)
-    p4_sec = _build_phase4_section(p4_context)
-    learning_sec = _build_learning_section(learning_episode_obj, simulated_flag, p4_sec, episode_stored=episode_db_stored)
-    summary_sec = _build_final_summary(p4_sec, p3_sec, sol, simulated_flag)
-    integrity_sec = _build_integrity_section(prob_sec["input_hash"], handoff_sec["payload_hash"])
-
-    canonical_context = {
-        "schema_version": "phase34-report-v1",
-        "report_type": "PHASE34_PROBLEM_SUMMARY",
-        "run": run_sec,
-        "problem": prob_sec,
-        "phase_3": p3_sec,
-        "phase_3_to_4_handoff": handoff_sec,
-        "rl_advisory": rl_sec,
-        "phase_4": p4_sec,
-        "learning": learning_sec,
-        "final_summary": summary_sec,
-        "integrity": integrity_sec
-    }
-
-    # Record chronological Phase 3-4 execution events
+    # Instantiate Event Recorder immediately
     recorder = Phase34EventRecorder(
         verification_run_id=verif_id,
         problem_run_id=problem_run_id,
         case_id=case_id
     )
 
-    # 1. PROBLEM_RECEIVED
+    # 1. Record PROBLEM_RECEIVED immediately after successfully parsing the input
+    prob_sec = _build_problem_section(case_id, problem_path, raw_problem)
     recorder.record(
         phase="INPUT",
         component="coordinator",
@@ -969,7 +877,7 @@ def run_single_problem(
         details={"case_id": case_id, "source_file": prob_sec["source_file"], "severity": prob_sec["severity"]}
     )
 
-    # 2. PHASE3_STARTED
+    # 2. Record PHASE3_STARTED immediately before DebateManager.run()
     recorder.record(
         phase="PHASE_3",
         component="debate_manager",
@@ -980,7 +888,16 @@ def run_single_problem(
         details={}
     )
 
-    # 3. OPTIMIST_COMPLETED or OPTIMIST_NOT_RUN
+    # 3. Run DebateManager.run()
+    dm = DebateManager()
+    p3_res = dm.run(raw_problem)
+    sol = p3_res.get("solution", {})
+    p3_status = str(p3_res.get("phase3_status") or "PHASE3_FAILED")
+
+    # Immediately build the Phase 3 normalized section and record Phase 3 events
+    p3_sec = _build_phase3_section(p3_res, dm, sol)
+
+    # 3a. OPTIMIST_COMPLETED or OPTIMIST_NOT_RUN
     opt_st = p3_sec["agents"]["optimist"]
     recorder.record(
         phase="PHASE_3",
@@ -992,7 +909,7 @@ def run_single_problem(
         details={"valid": opt_st["valid"], "latency_ms": opt_st["latency_ms"]}
     )
 
-    # 4. CRITIC_COMPLETED or CRITIC_NOT_RUN
+    # 3b. CRITIC_COMPLETED or CRITIC_NOT_RUN
     crit_st = p3_sec["agents"]["critic"]
     recorder.record(
         phase="PHASE_3",
@@ -1004,7 +921,7 @@ def run_single_problem(
         details={"valid": crit_st["valid"], "latency_ms": crit_st["latency_ms"]}
     )
 
-    # 5. FACT_CHECKER_COMPLETED or FACT_CHECKER_NOT_RUN
+    # 3c. FACT_CHECKER_COMPLETED or FACT_CHECKER_NOT_RUN
     fc_st = p3_sec["agents"]["fact_checker"]
     recorder.record(
         phase="PHASE_3",
@@ -1016,7 +933,7 @@ def run_single_problem(
         details={"valid": fc_st["valid"], "latency_ms": fc_st["latency_ms"]}
     )
 
-    # 6. CONFIDENCE_CALCULATED or CONFIDENCE_UNAVAILABLE
+    # 3d. CONFIDENCE_CALCULATED or CONFIDENCE_UNAVAILABLE
     conf_obj = p3_sec["confidence"]
     if conf_obj["score"] is not None:
         recorder.record(
@@ -1039,7 +956,7 @@ def run_single_problem(
             details={"score": None, "threshold": None, "calibration_status": "UNAVAILABLE"}
         )
 
-    # 7. SAFETY_EVALUATED or SAFETY_UNAVAILABLE
+    # 3e. SAFETY_EVALUATED or SAFETY_UNAVAILABLE
     safety_obj = p3_sec["safety"]
     if safety_obj["status"] in ["PASS", "SAFETY_VIOLATION"]:
         recorder.record(
@@ -1062,7 +979,7 @@ def run_single_problem(
             details={"status": "UNAVAILABLE", "veto_applied": False}
         )
 
-    # 8. ORCHESTRATOR_COMPLETED or PHASE3_FAILED
+    # 3f. ORCHESTRATOR_COMPLETED or PHASE3_FAILED
     if p3_status != "PHASE3_FAILED":
         recorder.record(
             phase="PHASE_3",
@@ -1084,7 +1001,13 @@ def run_single_problem(
             details={"decision": p3_sec["orchestrator_decision"], "status": "PHASE3_FAILED"}
         )
 
-    # 9. ENVELOPE_CREATED
+    # 4. Build and validate the exact envelope
+    envelope = build_action_proposed(case_id, p3_res)
+    payload_hash = envelope.get("payload_hash") or compute_payload_hash(envelope)
+    is_valid, errs, _ = validate_envelope(envelope)
+    handoff_sec = _build_handoff_section(envelope, is_valid, errs)
+
+    # 5. Immediately record ENVELOPE_CREATED and ENVELOPE_VALIDATED / ENVELOPE_VALIDATION_FAILED
     recorder.record(
         phase="PHASE_3_TO_4_HANDOFF",
         component="action_publisher",
@@ -1095,7 +1018,6 @@ def run_single_problem(
         details={"payload_hash": str(payload_hash)}
     )
 
-    # 10. ENVELOPE_VALIDATED or ENVELOPE_VALIDATION_FAILED
     if is_valid:
         recorder.record(
             phase="PHASE_3_TO_4_HANDOFF",
@@ -1129,7 +1051,26 @@ def run_single_problem(
             }
         )
 
-    # 11. RL_ADVISORY_CREATED or RL_ADVISORY_UNAVAILABLE
+    # 6. Generate the RL advisory only after envelope validation, using the exact envelope
+    rl_advisory_obj = None
+    rl_error = None
+    try:
+        rl_advisor = RLAdvisor()
+        rl_advisory_obj = rl_advisor.generate_advisory(
+            envelope=envelope,
+            p3_res=p3_res,
+            run_id=problem_run_id
+        )
+    except Exception as e:
+        rl_error = str(e)
+
+    p3_res["rl_advisory"] = rl_advisory_obj.to_dict() if (rl_advisory_obj and hasattr(rl_advisory_obj, "to_dict")) else {"error": rl_error}
+    if rl_advisory_obj and hasattr(rl_advisory_obj, "to_dict"):
+        envelope["rl_advisory"] = rl_advisory_obj.to_dict()
+
+    rl_sec = _build_rl_advisory_section(rl_advisory_obj, rl_error=rl_error)
+
+    # 7. Immediately record RL_ADVISORY_CREATED or RL_ADVISORY_UNAVAILABLE
     if rl_sec["status"] == "SUCCESS":
         recorder.record(
             phase="RL_ADVISORY",
@@ -1159,18 +1100,10 @@ def run_single_problem(
             }
         )
 
-    # 12. PHASE4_STARTED or PHASE4_SKIPPED
-    if p3_status != "PHASE3_FAILED":
-        recorder.record(
-            phase="PHASE_4",
-            component="shadow_sandbox",
-            event="PHASE4_STARTED",
-            status="STARTED",
-            reason_code="STARTED",
-            duration_ms=0.0,
-            details={}
-        )
-    else:
+    # 8. Phase 4 Execution
+    simulated_flag = bool(os.environ.get("DEBATE_MOCK_LLM") == "1") or bool(raw_problem.get("simulated"))
+    if p3_status == "PHASE3_FAILED":
+        # Record PHASE4_SKIPPED and do not call run_phase4_pipeline()
         recorder.record(
             phase="PHASE_4",
             component="shadow_sandbox",
@@ -1180,8 +1113,25 @@ def run_single_problem(
             duration_ms=0.0,
             details={}
         )
+        p4_context = _build_failed_phase4_section(envelope)
+    else:
+        # Record PHASE4_STARTED immediately before calling run_phase4_pipeline()
+        recorder.record(
+            phase="PHASE_4",
+            component="shadow_sandbox",
+            event="PHASE4_STARTED",
+            status="STARTED",
+            reason_code="STARTED",
+            duration_ms=0.0,
+            details={}
+        )
+        fault_spec = raw_problem.get("fault_spec")
+        p4_context = run_phase4_pipeline(envelope, fault_spec=fault_spec, is_simulated=simulated_flag)
 
-    # 13. TARGET_RESOLUTION_COMPLETED or TARGET_RESOLUTION_SKIPPED
+    # 10. Normalize Phase 4 result and record stage outcome events
+    p4_sec = _build_phase4_section(p4_context)
+
+    # 10a. TARGET_RESOLUTION_COMPLETED or TARGET_RESOLUTION_SKIPPED
     if p3_status == "PHASE3_FAILED":
         recorder.record(
             phase="PHASE_4",
@@ -1204,7 +1154,7 @@ def run_single_problem(
             details={"target": p4_sec.get("target", {})}
         )
 
-    # 14. ATTESTATION_COMPLETED or ATTESTATION_SKIPPED
+    # 10b. ATTESTATION_COMPLETED or ATTESTATION_SKIPPED
     att = p4_sec["attestation"]
     recorder.record(
         phase="PHASE_4",
@@ -1216,7 +1166,7 @@ def run_single_problem(
         details={"attempted": att["attempted"], "status": att["status"]}
     )
 
-    # 15. BEFORE_OBSERVATION_COMPLETED or BEFORE_OBSERVATION_SKIPPED
+    # 10c. BEFORE_OBSERVATION_COMPLETED or BEFORE_OBSERVATION_SKIPPED
     b_obs = p4_sec["before_observations"]
     recorder.record(
         phase="PHASE_4",
@@ -1228,7 +1178,7 @@ def run_single_problem(
         details={"attempted": b_obs["attempted"], "status": b_obs["status"]}
     )
 
-    # 16. FAULT_SETUP_COMPLETED or FAULT_SETUP_SKIPPED
+    # 10d. FAULT_SETUP_COMPLETED or FAULT_SETUP_SKIPPED
     f_set = p4_sec["fault_setup"]
     recorder.record(
         phase="PHASE_4",
@@ -1240,17 +1190,24 @@ def run_single_problem(
         details={"attempted": f_set["attempted"], "status": f_set["status"]}
     )
 
-    # 17. EXECUTION_COMPLETED, EXECUTION_BLOCKED or EXECUTION_SKIPPED
+    # 10e. EXECUTION_COMPLETED, EXECUTION_BLOCKED or EXECUTION_SKIPPED
     ex = p4_sec["execution"]
     if p3_sec["safety"].get("veto_applied"):
+        # Machine reason code: SAFETY_VETO, human explanation inside details["reason"]
         recorder.record(
             phase="PHASE_4",
             component="executor",
             event="EXECUTION_BLOCKED",
             status="BLOCKED",
-            reason_code=p3_sec["safety"].get("reason", "SAFETY_VIOLATION"),
+            reason_code="SAFETY_VETO",
             duration_ms=ex["duration_ms"],
-            details={"attempted": False, "capability": ex.get("capability"), "mode": ex.get("mode"), "status": "BLOCKED"}
+            details={
+                "attempted": False,
+                "capability": ex.get("capability"),
+                "mode": ex.get("mode"),
+                "status": "BLOCKED",
+                "reason": str(p3_sec["safety"].get("reason") or "Safety veto applied")
+            }
         )
     elif ex["attempted"]:
         succ = bool(ex.get("result", {}).get("success")) if isinstance(ex.get("result"), dict) else (ex["status"] == "SUCCESS")
@@ -1274,7 +1231,7 @@ def run_single_problem(
             details={"attempted": False, "capability": ex.get("capability"), "mode": ex.get("mode"), "status": ex["status"]}
         )
 
-    # 18. AFTER_OBSERVATION_COMPLETED or AFTER_OBSERVATION_SKIPPED
+    # 10f. AFTER_OBSERVATION_COMPLETED or AFTER_OBSERVATION_SKIPPED
     a_obs = p4_sec["after_observations"]
     recorder.record(
         phase="PHASE_4",
@@ -1286,7 +1243,7 @@ def run_single_problem(
         details={"attempted": a_obs["attempted"], "status": a_obs["status"]}
     )
 
-    # 19. VERIFICATION_COMPLETED or VERIFICATION_SKIPPED
+    # 10g. VERIFICATION_COMPLETED or VERIFICATION_SKIPPED
     ver = p4_sec["verification"]
     recorder.record(
         phase="PHASE_4",
@@ -1298,7 +1255,7 @@ def run_single_problem(
         details={"attempted": ver["attempted"], "status": ver["status"]}
     )
 
-    # 20. ROLLBACK_COMPLETED or ROLLBACK_SKIPPED
+    # 10h. ROLLBACK_COMPLETED or ROLLBACK_SKIPPED
     rb = p4_sec["rollback"]
     recorder.record(
         phase="PHASE_4",
@@ -1310,7 +1267,7 @@ def run_single_problem(
         details={"attempted": rb["attempted"], "status": rb["status"]}
     )
 
-    # 21. CLEANUP_COMPLETED or CLEANUP_SKIPPED
+    # 10i. CLEANUP_COMPLETED or CLEANUP_SKIPPED
     cl = p4_sec["cleanup"]
     recorder.record(
         phase="PHASE_4",
@@ -1322,8 +1279,31 @@ def run_single_problem(
         details={"attempted": cl["attempted"], "status": cl["status"]}
     )
 
-    # 22. LEARNING_EPISODE_CREATED or LEARNING_EPISODE_SKIPPED
-    if learning_sec.get("episode_id"):
+    # 11. Build/store learning episode and record learning event
+    episode_db_stored = False
+    learning_episode_obj = None
+    try:
+        learning_episode_obj = build_learning_episode(
+            advisory=rl_advisory_obj,
+            envelope=envelope,
+            phase4_result=p4_context,
+            run_id=problem_run_id
+        )
+        ep_store = EpisodeStore()
+        if rl_advisory_obj:
+            try:
+                ep_store.save_advisory(rl_advisory_obj)
+            except Exception:
+                pass
+        if learning_episode_obj:
+            episode_db_stored = bool(ep_store.save_episode(learning_episode_obj))
+    except Exception:
+        episode_db_stored = False
+        learning_episode_obj = None
+
+    learning_sec = _build_learning_section(learning_episode_obj, simulated_flag, p4_sec, episode_stored=episode_db_stored)
+
+    if learning_episode_obj is not None:
         recorder.record(
             phase="LEARNING",
             component="learning_engine",
@@ -1338,13 +1318,36 @@ def run_single_problem(
             phase="LEARNING",
             component="learning_engine",
             event="LEARNING_EPISODE_SKIPPED",
-            status=learning_sec["status"],
+            status="NOT_RUN",
             reason_code=learning_sec.get("eligibility_reason") or "NOT_ELIGIBLE",
             duration_ms=0.0,
-            details={"status": learning_sec["status"], "stored": False, "eligible": False}
+            details={"status": "NOT_RUN", "stored": False, "eligible": False}
         )
 
-    # 23. REPORT_VALIDATED (validate canonical report context in-memory first)
+    end_dt = datetime.now(timezone.utc)
+    completed_at = end_dt.isoformat().replace("+00:00", "Z")
+    duration_ms = (time.perf_counter() - start_time) * 1000.0
+
+    # Build canonical report context
+    run_sec = _build_run_section(verif_id, problem_run_id, started_at, completed_at, duration_ms, simulated_flag)
+    summary_sec = _build_final_summary(p4_sec, p3_sec, sol, simulated_flag)
+    integrity_sec = _build_integrity_section(prob_sec["input_hash"], handoff_sec["payload_hash"])
+
+    canonical_context = {
+        "schema_version": "phase34-report-v1",
+        "report_type": "PHASE34_PROBLEM_SUMMARY",
+        "run": run_sec,
+        "problem": prob_sec,
+        "phase_3": p3_sec,
+        "phase_3_to_4_handoff": handoff_sec,
+        "rl_advisory": rl_sec,
+        "phase_4": p4_sec,
+        "learning": learning_sec,
+        "final_summary": summary_sec,
+        "integrity": integrity_sec
+    }
+
+    # 12. Validate the final report context in-memory and record REPORT_VALIDATED
     temp_context = copy.deepcopy(canonical_context)
     temp_context["integrity"]["event_log_hash"] = "0" * 64
     temp_context["integrity"]["errors"] = []
@@ -1365,7 +1368,7 @@ def run_single_problem(
         details={"schema_valid": True}
     )
 
-    # 24. PROBLEM_RUN_COMPLETED
+    # 13. Record PROBLEM_RUN_COMPLETED last
     recorder.record(
         phase="REPORTING",
         component="coordinator",
@@ -1380,7 +1383,7 @@ def run_single_problem(
         }
     )
 
-    # Final event hash calculation and final report validation
+    # 14. Calculate event_log_hash from the final exact JSONL bytes
     final_events_hash = recorder.compute_hash()
     canonical_context["integrity"]["event_log_hash"] = final_events_hash
     canonical_context["integrity"]["errors"] = []
@@ -1390,10 +1393,10 @@ def run_single_problem(
         err_msgs = [f"JSON Schema error at {e.json_path}: {e.message}" for e in final_val_errs]
         raise ReportContractError(f"Final canonical report validation failed: {err_msgs}")
 
-    # Atomically persist phase34_events.jsonl
+    # 15. Write phase34_events.jsonl
     events_path = recorder.write_atomic(reports_base_dir=reports_base_dir)
 
-    # Atomically persist phase34_report.json and phase34_report.md
+    # 16. Write phase34_report.json and phase34_report.md
     json_path, md_path = generate_phase34_report(canonical_context, reports_base_dir=reports_base_dir)
 
     final_outcome = summary_sec.get("outcome", "UNKNOWN")
