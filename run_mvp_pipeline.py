@@ -42,10 +42,22 @@ from debate.action_publisher import build_action_proposed
 from contracts.canonical_json import compute_payload_hash
 from contracts.validation import validate_envelope, is_mvp_supported, get_capabilities
 from shadow_sandbox.run_pipeline import run_phase4_pipeline
-from shadow_sandbox.reports.report_generator import generate_phase34_report, EMPTY_EVENT_LOG_HASH
+from shadow_sandbox.reports.report_generator import (
+    generate_phase34_report,
+    EMPTY_EVENT_LOG_HASH,
+    load_report_schema,
+    get_format_checker,
+    ReportContractError,
+)
+from shadow_sandbox.reports.event_recorder import (
+    Phase34EventRecorder,
+    EventContractError,
+    EventWriteError,
+)
 from rl_engine.advisor import RLAdvisor
 from rl_engine.episode_builder import build_learning_episode
 from rl_engine.episode_store import EpisodeStore
+from jsonschema import Draft7Validator
 
 
 def _get_commit_sha() -> str:
@@ -939,14 +951,457 @@ def run_single_problem(
         "integrity": integrity_sec
     }
 
-    # 4. Generate Canonical Phase 3+4 JSON and Markdown Reports
+    # Record chronological Phase 3-4 execution events
+    recorder = Phase34EventRecorder(
+        verification_run_id=verif_id,
+        problem_run_id=problem_run_id,
+        case_id=case_id
+    )
+
+    # 1. PROBLEM_RECEIVED
+    recorder.record(
+        phase="INPUT",
+        component="coordinator",
+        event="PROBLEM_RECEIVED",
+        status="COMPLETED",
+        reason_code="PROBLEM_LOADED",
+        duration_ms=0.0,
+        details={"case_id": case_id, "source_file": prob_sec["source_file"], "severity": prob_sec["severity"]}
+    )
+
+    # 2. PHASE3_STARTED
+    recorder.record(
+        phase="PHASE_3",
+        component="debate_manager",
+        event="PHASE3_STARTED",
+        status="STARTED",
+        reason_code="STARTED",
+        duration_ms=0.0,
+        details={}
+    )
+
+    # 3. OPTIMIST_COMPLETED or OPTIMIST_NOT_RUN
+    opt_st = p3_sec["agents"]["optimist"]
+    recorder.record(
+        phase="PHASE_3",
+        component="agent.optimist",
+        event="OPTIMIST_COMPLETED" if opt_st["status"] in ["SUCCESS", "COMPLETED", "FAILED"] else "OPTIMIST_NOT_RUN",
+        status=opt_st["status"],
+        reason_code=opt_st["status"],
+        duration_ms=opt_st["latency_ms"],
+        details={"valid": opt_st["valid"], "latency_ms": opt_st["latency_ms"]}
+    )
+
+    # 4. CRITIC_COMPLETED or CRITIC_NOT_RUN
+    crit_st = p3_sec["agents"]["critic"]
+    recorder.record(
+        phase="PHASE_3",
+        component="agent.critic",
+        event="CRITIC_COMPLETED" if crit_st["status"] in ["SUCCESS", "COMPLETED", "FAILED"] else "CRITIC_NOT_RUN",
+        status=crit_st["status"],
+        reason_code=crit_st["status"],
+        duration_ms=crit_st["latency_ms"],
+        details={"valid": crit_st["valid"], "latency_ms": crit_st["latency_ms"]}
+    )
+
+    # 5. FACT_CHECKER_COMPLETED or FACT_CHECKER_NOT_RUN
+    fc_st = p3_sec["agents"]["fact_checker"]
+    recorder.record(
+        phase="PHASE_3",
+        component="agent.fact_checker",
+        event="FACT_CHECKER_COMPLETED" if fc_st["status"] in ["SUCCESS", "COMPLETED", "FAILED"] else "FACT_CHECKER_NOT_RUN",
+        status=fc_st["status"],
+        reason_code=fc_st["status"],
+        duration_ms=fc_st["latency_ms"],
+        details={"valid": fc_st["valid"], "latency_ms": fc_st["latency_ms"]}
+    )
+
+    # 6. CONFIDENCE_CALCULATED or CONFIDENCE_UNAVAILABLE
+    conf_obj = p3_sec["confidence"]
+    if conf_obj["score"] is not None:
+        recorder.record(
+            phase="PHASE_3",
+            component="scoring_engine",
+            event="CONFIDENCE_CALCULATED",
+            status="SUCCESS",
+            reason_code=conf_obj["calibration_status"],
+            duration_ms=0.0,
+            details={"score": conf_obj["score"], "threshold": conf_obj["threshold"], "calibration_status": conf_obj["calibration_status"]}
+        )
+    else:
+        recorder.record(
+            phase="PHASE_3",
+            component="scoring_engine",
+            event="CONFIDENCE_UNAVAILABLE",
+            status="UNAVAILABLE",
+            reason_code="UNAVAILABLE",
+            duration_ms=0.0,
+            details={"score": None, "threshold": None, "calibration_status": "UNAVAILABLE"}
+        )
+
+    # 7. SAFETY_EVALUATED or SAFETY_UNAVAILABLE
+    safety_obj = p3_sec["safety"]
+    if safety_obj["status"] in ["PASS", "SAFETY_VIOLATION"]:
+        recorder.record(
+            phase="PHASE_3",
+            component="safety_guard",
+            event="SAFETY_EVALUATED",
+            status=safety_obj["status"],
+            reason_code="SAFETY_VIOLATION" if safety_obj.get("veto_applied") else "SAFETY_PASS",
+            duration_ms=0.0,
+            details={"status": safety_obj["status"], "veto_applied": safety_obj.get("veto_applied", False)}
+        )
+    else:
+        recorder.record(
+            phase="PHASE_3",
+            component="safety_guard",
+            event="SAFETY_UNAVAILABLE",
+            status="UNAVAILABLE",
+            reason_code="UNAVAILABLE",
+            duration_ms=0.0,
+            details={"status": "UNAVAILABLE", "veto_applied": False}
+        )
+
+    # 8. ORCHESTRATOR_COMPLETED or PHASE3_FAILED
+    if p3_status != "PHASE3_FAILED":
+        recorder.record(
+            phase="PHASE_3",
+            component="orchestrator",
+            event="ORCHESTRATOR_COMPLETED",
+            status="COMPLETED",
+            reason_code=p3_sec["orchestrator_decision"],
+            duration_ms=p3_sec["duration_ms"],
+            details={"decision": p3_sec["orchestrator_decision"], "status": p3_status}
+        )
+    else:
+        recorder.record(
+            phase="PHASE_3",
+            component="orchestrator",
+            event="PHASE3_FAILED",
+            status="FAILED",
+            reason_code="PHASE3_FAILED",
+            duration_ms=p3_sec["duration_ms"],
+            details={"decision": p3_sec["orchestrator_decision"], "status": "PHASE3_FAILED"}
+        )
+
+    # 9. ENVELOPE_CREATED
+    recorder.record(
+        phase="PHASE_3_TO_4_HANDOFF",
+        component="action_publisher",
+        event="ENVELOPE_CREATED",
+        status="SUCCESS",
+        reason_code="ENVELOPE_CREATED",
+        duration_ms=0.0,
+        details={"payload_hash": str(payload_hash)}
+    )
+
+    # 10. ENVELOPE_VALIDATED or ENVELOPE_VALIDATION_FAILED
+    if is_valid:
+        recorder.record(
+            phase="PHASE_3_TO_4_HANDOFF",
+            component="envelope_validator",
+            event="ENVELOPE_VALIDATED",
+            status="SUCCESS",
+            reason_code="VALID",
+            duration_ms=0.0,
+            details={
+                "schema_valid": is_valid,
+                "payload_hash": str(payload_hash),
+                "capability_mapped": handoff_sec["capability_mapped"],
+                "mvp_supported": handoff_sec["mvp_supported"],
+                "target_resolved": handoff_sec["target_resolved"]
+            }
+        )
+    else:
+        recorder.record(
+            phase="PHASE_3_TO_4_HANDOFF",
+            component="envelope_validator",
+            event="ENVELOPE_VALIDATION_FAILED",
+            status="FAILED",
+            reason_code="INVALID",
+            duration_ms=0.0,
+            details={
+                "schema_valid": is_valid,
+                "payload_hash": str(payload_hash),
+                "capability_mapped": handoff_sec["capability_mapped"],
+                "mvp_supported": handoff_sec["mvp_supported"],
+                "target_resolved": handoff_sec["target_resolved"]
+            }
+        )
+
+    # 11. RL_ADVISORY_CREATED or RL_ADVISORY_UNAVAILABLE
+    if rl_sec["status"] == "SUCCESS":
+        recorder.record(
+            phase="RL_ADVISORY",
+            component="rl_advisor",
+            event="RL_ADVISORY_CREATED",
+            status="SUCCESS",
+            reason_code=rl_sec["recommendation"],
+            duration_ms=rl_sec["latency_ms"],
+            details={
+                "status": rl_sec["status"],
+                "recommendation": rl_sec["recommendation"],
+                "operating_mode": rl_sec["operating_mode"]
+            }
+        )
+    else:
+        recorder.record(
+            phase="RL_ADVISORY",
+            component="rl_advisor",
+            event="RL_ADVISORY_UNAVAILABLE",
+            status="UNAVAILABLE",
+            reason_code=rl_sec["recommendation"],
+            duration_ms=rl_sec["latency_ms"],
+            details={
+                "status": rl_sec["status"],
+                "recommendation": rl_sec["recommendation"],
+                "operating_mode": rl_sec["operating_mode"]
+            }
+        )
+
+    # 12. PHASE4_STARTED or PHASE4_SKIPPED
+    if p3_status != "PHASE3_FAILED":
+        recorder.record(
+            phase="PHASE_4",
+            component="shadow_sandbox",
+            event="PHASE4_STARTED",
+            status="STARTED",
+            reason_code="STARTED",
+            duration_ms=0.0,
+            details={}
+        )
+    else:
+        recorder.record(
+            phase="PHASE_4",
+            component="shadow_sandbox",
+            event="PHASE4_SKIPPED",
+            status="NOT_RUN",
+            reason_code="PHASE3_FAILED",
+            duration_ms=0.0,
+            details={}
+        )
+
+    # 13. TARGET_RESOLUTION_COMPLETED or TARGET_RESOLUTION_SKIPPED
+    if p3_status == "PHASE3_FAILED":
+        recorder.record(
+            phase="PHASE_4",
+            component="target_resolver",
+            event="TARGET_RESOLUTION_SKIPPED",
+            status="NOT_RUN",
+            reason_code="PHASE3_FAILED",
+            duration_ms=0.0,
+            details={}
+        )
+    else:
+        res_ok = bool(handoff_sec.get("target_resolved"))
+        recorder.record(
+            phase="PHASE_4",
+            component="target_resolver",
+            event="TARGET_RESOLUTION_COMPLETED",
+            status="RESOLVED" if res_ok else "FAILED",
+            reason_code="RESOLVED" if res_ok else "TARGET_UNRESOLVED",
+            duration_ms=0.0,
+            details={"target": p4_sec.get("target", {})}
+        )
+
+    # 14. ATTESTATION_COMPLETED or ATTESTATION_SKIPPED
+    att = p4_sec["attestation"]
+    recorder.record(
+        phase="PHASE_4",
+        component="attestation",
+        event="ATTESTATION_COMPLETED" if att["attempted"] else "ATTESTATION_SKIPPED",
+        status=att["status"],
+        reason_code=att["reason_code"],
+        duration_ms=att["duration_ms"],
+        details={"attempted": att["attempted"], "status": att["status"]}
+    )
+
+    # 15. BEFORE_OBSERVATION_COMPLETED or BEFORE_OBSERVATION_SKIPPED
+    b_obs = p4_sec["before_observations"]
+    recorder.record(
+        phase="PHASE_4",
+        component="observation",
+        event="BEFORE_OBSERVATION_COMPLETED" if b_obs["attempted"] else "BEFORE_OBSERVATION_SKIPPED",
+        status=b_obs["status"],
+        reason_code=b_obs["reason_code"],
+        duration_ms=b_obs["duration_ms"],
+        details={"attempted": b_obs["attempted"], "status": b_obs["status"]}
+    )
+
+    # 16. FAULT_SETUP_COMPLETED or FAULT_SETUP_SKIPPED
+    f_set = p4_sec["fault_setup"]
+    recorder.record(
+        phase="PHASE_4",
+        component="fault_injector",
+        event="FAULT_SETUP_COMPLETED" if f_set["attempted"] else "FAULT_SETUP_SKIPPED",
+        status=f_set["status"],
+        reason_code=f_set["reason_code"],
+        duration_ms=f_set["duration_ms"],
+        details={"attempted": f_set["attempted"], "status": f_set["status"]}
+    )
+
+    # 17. EXECUTION_COMPLETED, EXECUTION_BLOCKED or EXECUTION_SKIPPED
+    ex = p4_sec["execution"]
+    if p3_sec["safety"].get("veto_applied"):
+        recorder.record(
+            phase="PHASE_4",
+            component="executor",
+            event="EXECUTION_BLOCKED",
+            status="BLOCKED",
+            reason_code=p3_sec["safety"].get("reason", "SAFETY_VIOLATION"),
+            duration_ms=ex["duration_ms"],
+            details={"attempted": False, "capability": ex.get("capability"), "mode": ex.get("mode"), "status": "BLOCKED"}
+        )
+    elif ex["attempted"]:
+        succ = bool(ex.get("result", {}).get("success")) if isinstance(ex.get("result"), dict) else (ex["status"] == "SUCCESS")
+        recorder.record(
+            phase="PHASE_4",
+            component="executor",
+            event="EXECUTION_COMPLETED",
+            status=ex["status"],
+            reason_code=ex.get("reason_code") or ex["status"],
+            duration_ms=ex["duration_ms"],
+            details={"attempted": True, "capability": ex.get("capability"), "mode": ex.get("mode"), "status": ex["status"], "success": succ}
+        )
+    else:
+        recorder.record(
+            phase="PHASE_4",
+            component="executor",
+            event="EXECUTION_SKIPPED",
+            status=ex["status"],
+            reason_code=ex.get("reason_code") or ex["status"],
+            duration_ms=ex["duration_ms"],
+            details={"attempted": False, "capability": ex.get("capability"), "mode": ex.get("mode"), "status": ex["status"]}
+        )
+
+    # 18. AFTER_OBSERVATION_COMPLETED or AFTER_OBSERVATION_SKIPPED
+    a_obs = p4_sec["after_observations"]
+    recorder.record(
+        phase="PHASE_4",
+        component="observation",
+        event="AFTER_OBSERVATION_COMPLETED" if a_obs["attempted"] else "AFTER_OBSERVATION_SKIPPED",
+        status=a_obs["status"],
+        reason_code=a_obs["reason_code"],
+        duration_ms=a_obs["duration_ms"],
+        details={"attempted": a_obs["attempted"], "status": a_obs["status"]}
+    )
+
+    # 19. VERIFICATION_COMPLETED or VERIFICATION_SKIPPED
+    ver = p4_sec["verification"]
+    recorder.record(
+        phase="PHASE_4",
+        component="verifier",
+        event="VERIFICATION_COMPLETED" if ver["attempted"] else "VERIFICATION_SKIPPED",
+        status=ver["status"],
+        reason_code=ver["reason_code"],
+        duration_ms=ver["duration_ms"],
+        details={"attempted": ver["attempted"], "status": ver["status"]}
+    )
+
+    # 20. ROLLBACK_COMPLETED or ROLLBACK_SKIPPED
+    rb = p4_sec["rollback"]
+    recorder.record(
+        phase="PHASE_4",
+        component="rollback",
+        event="ROLLBACK_COMPLETED" if rb["attempted"] else "ROLLBACK_SKIPPED",
+        status=rb["status"],
+        reason_code=rb["reason_code"],
+        duration_ms=rb["duration_ms"],
+        details={"attempted": rb["attempted"], "status": rb["status"]}
+    )
+
+    # 21. CLEANUP_COMPLETED or CLEANUP_SKIPPED
+    cl = p4_sec["cleanup"]
+    recorder.record(
+        phase="PHASE_4",
+        component="cleanup",
+        event="CLEANUP_COMPLETED" if cl["attempted"] else "CLEANUP_SKIPPED",
+        status=cl["status"],
+        reason_code=cl["reason_code"],
+        duration_ms=cl["duration_ms"],
+        details={"attempted": cl["attempted"], "status": cl["status"]}
+    )
+
+    # 22. LEARNING_EPISODE_CREATED or LEARNING_EPISODE_SKIPPED
+    if learning_sec.get("episode_id"):
+        recorder.record(
+            phase="LEARNING",
+            component="learning_engine",
+            event="LEARNING_EPISODE_CREATED",
+            status=learning_sec["status"],
+            reason_code=learning_sec.get("eligibility_reason") or "NOT_ELIGIBLE",
+            duration_ms=0.0,
+            details={"status": learning_sec["status"], "stored": learning_sec.get("stored", False), "eligible": learning_sec.get("eligible", False)}
+        )
+    else:
+        recorder.record(
+            phase="LEARNING",
+            component="learning_engine",
+            event="LEARNING_EPISODE_SKIPPED",
+            status=learning_sec["status"],
+            reason_code=learning_sec.get("eligibility_reason") or "NOT_ELIGIBLE",
+            duration_ms=0.0,
+            details={"status": learning_sec["status"], "stored": False, "eligible": False}
+        )
+
+    # 23. REPORT_VALIDATED (validate canonical report context in-memory first)
+    temp_context = copy.deepcopy(canonical_context)
+    temp_context["integrity"]["event_log_hash"] = "0" * 64
+    temp_context["integrity"]["errors"] = []
+    schema = load_report_schema()
+    val = Draft7Validator(schema, format_checker=get_format_checker())
+    val_errs = sorted(val.iter_errors(temp_context), key=lambda e: (list(e.path), e.message))
+    if val_errs:
+        err_msgs = [f"JSON Schema error at {e.json_path}: {e.message}" for e in val_errs]
+        raise ReportContractError(f"In-memory canonical report validation failed: {err_msgs}")
+
+    recorder.record(
+        phase="REPORTING",
+        component="report_validator",
+        event="REPORT_VALIDATED",
+        status="SUCCESS",
+        reason_code="VALID",
+        duration_ms=0.0,
+        details={"schema_valid": True}
+    )
+
+    # 24. PROBLEM_RUN_COMPLETED
+    recorder.record(
+        phase="REPORTING",
+        component="coordinator",
+        event="PROBLEM_RUN_COMPLETED",
+        status=summary_sec["outcome"],
+        reason_code=summary_sec["outcome"],
+        duration_ms=duration_ms,
+        details={
+            "outcome": summary_sec["outcome"],
+            "problem_resolved_in_sandbox": summary_sec.get("problem_resolved_in_sandbox", False),
+            "execution_performed": summary_sec.get("execution_performed", False)
+        }
+    )
+
+    # Final event hash calculation and final report validation
+    final_events_hash = recorder.compute_hash()
+    canonical_context["integrity"]["event_log_hash"] = final_events_hash
+    canonical_context["integrity"]["errors"] = []
+
+    final_val_errs = sorted(val.iter_errors(canonical_context), key=lambda e: (list(e.path), e.message))
+    if final_val_errs:
+        err_msgs = [f"JSON Schema error at {e.json_path}: {e.message}" for e in final_val_errs]
+        raise ReportContractError(f"Final canonical report validation failed: {err_msgs}")
+
+    # Atomically persist phase34_events.jsonl
+    events_path = recorder.write_atomic(reports_base_dir=reports_base_dir)
+
+    # Atomically persist phase34_report.json and phase34_report.md
     json_path, md_path = generate_phase34_report(canonical_context, reports_base_dir=reports_base_dir)
 
     final_outcome = summary_sec.get("outcome", "UNKNOWN")
     print(f"\n[MVP COORDINATOR] Incident [{case_id}] complete!")
     print(f"  - Final Outcome : {final_outcome}")
     print(f"  - JSON Report   : {json_path}")
-    print(f"  - MD Report     : {md_path}\n")
+    print(f"  - MD Report     : {md_path}")
+    print(f"  - Events Log    : {events_path}\n")
 
     return {
         "incident_id": case_id,
@@ -955,7 +1410,8 @@ def run_single_problem(
         "problem_run_id": problem_run_id,
         "outcome": final_outcome,
         "json_report": json_path,
-        "md_report": md_path
+        "md_report": md_path,
+        "events_report": events_path
     }
 
 

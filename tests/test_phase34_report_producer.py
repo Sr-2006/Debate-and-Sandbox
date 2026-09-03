@@ -359,4 +359,7 @@ def test_coordinator_smoke_test(tmp_path):
     assert data["learning"]["reward"] is None
     assert data["learning"]["sample_weight"] == 0.0
     assert data["final_summary"]["problem_resolved_in_sandbox"] is False
-    assert "PHASE34_EVENT_LOG_NOT_EMITTED_PHASE3" in data["integrity"]["errors"]
+    events_path = tmp_path / verif_id / "cases" / "case_01" / "phase34_events.jsonl"
+    assert events_path.exists()
+    assert "PHASE34_EVENT_LOG_NOT_EMITTED_PHASE3" not in data["integrity"]["errors"]
+    assert len(data["integrity"]["event_log_hash"]) == 64

@@ -7,6 +7,7 @@ __pycache__/
 debate/output/*
 reports/*
 Arse_shadow/shadow_sandbox/reports/*
+!Arse_shadow/shadow_sandbox/reports/*.py
 output/*
 rl_engine/models/*.json
 rl_engine/outbox/*.json

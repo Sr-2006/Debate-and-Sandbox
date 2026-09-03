@@ -30,6 +30,9 @@ jobs:
       - name: Validate Phase 3-4 Report and Event Contracts
         run: |
           python -m pytest -q tests/test_phase34_contract.py -vv
+          python -m pytest -q tests/test_phase34_event_contract.py -vv
+          python -m pytest -q tests/test_phase34_event_recorder.py -vv
+          python -m pytest -q tests/test_phase34_event_consistency.py -vv
 
       - name: Run Canonical Phase 3-4 Report Producer Tests
         run: |

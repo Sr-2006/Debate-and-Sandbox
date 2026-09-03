@@ -317,9 +317,13 @@ def generate_phase34_report(
     if not report["integrity"].get("event_log_hash"):
         report["integrity"]["event_log_hash"] = EMPTY_EVENT_LOG_HASH
 
-    errors_list = report["integrity"].get("errors", [])
-    if "PHASE34_EVENT_LOG_NOT_EMITTED_PHASE3" not in errors_list:
-        errors_list.append("PHASE34_EVENT_LOG_NOT_EMITTED_PHASE3")
+    errors_list = list(report["integrity"].get("errors", []))
+    if report["integrity"].get("event_log_hash") == EMPTY_EVENT_LOG_HASH:
+        if "PHASE34_EVENT_LOG_NOT_EMITTED_PHASE3" not in errors_list:
+            errors_list.append("PHASE34_EVENT_LOG_NOT_EMITTED_PHASE3")
+    else:
+        if "PHASE34_EVENT_LOG_NOT_EMITTED_PHASE3" in errors_list:
+            errors_list.remove("PHASE34_EVENT_LOG_NOT_EMITTED_PHASE3")
     report["integrity"]["errors"] = errors_list
 
     # Initial Schema Validation
