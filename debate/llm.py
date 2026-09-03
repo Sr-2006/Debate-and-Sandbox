@@ -74,7 +74,7 @@ class LLMClient:
         last_err = None
         for attempt in range(3):
             try:
-                timeout_config = httpx.Timeout(2.0, connect=0.5)
+                timeout_config = httpx.Timeout(REQUEST_TIMEOUT, connect=10.0)
                 async with httpx.AsyncClient(timeout=timeout_config) as client:
                     response = await client.post(OLLAMA_API_URL, json=payload)
                     response.raise_for_status()
