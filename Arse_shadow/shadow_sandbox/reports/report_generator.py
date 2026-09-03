@@ -30,6 +30,13 @@ class ReportContractError(ValueError):
     pass
 
 
+class ReportAtomicityError(ReportContractError):
+    """Raised when atomic report pair replacement or restoration fails."""
+    def __init__(self, message: str, backup_paths: Optional[list[str]] = None):
+        super().__init__(message)
+        self.backup_paths = backup_paths or []
+
+
 def get_format_checker() -> FormatChecker:
     fc = FormatChecker()
     @fc.checks("date-time")
@@ -205,13 +212,13 @@ def _render_phase34_markdown(report: dict) -> str:
     lines.extend([
         "",
         "## Phase 3 Confidence and Safety",
-        f"- **Score**: `{conf.get('score', 0.0)}`",
-        f"- **Threshold**: `{conf.get('threshold', 0.8)}`",
-        f"- **Uncertainty**: `{conf.get('uncertainty', 0.0)}`",
-        f"- **Calibration Status**: `{conf.get('calibration_status', '')}`",
+        f"- **Score**: `{conf.get('score', None)}`",
+        f"- **Threshold**: `{conf.get('threshold', None)}`",
+        f"- **Uncertainty**: `{conf.get('uncertainty', None)}`",
+        f"- **Calibration Status**: `{conf.get('calibration_status', 'UNAVAILABLE')}`",
         f"- **Evidence Count**: `{conf.get('evidence_count', 0)}`",
-        f"- **Component Agreement**: `{conf.get('component_agreement', 0.0)}`",
-        f"- **Evidence Grounding**: `{conf.get('evidence_grounding', 0.0)}`",
+        f"- **Component Agreement**: `{conf.get('component_agreement', None)}`",
+        f"- **Evidence Grounding**: `{conf.get('evidence_grounding', None)}`",
         f"- **Veto Applied**: `{conf.get('veto_applied', False)}`",
         f"- **Veto Cap**: `{conf.get('veto_cap', None)}`",
         f"- **Reason Codes**: `{conf.get('reason_codes', [])}`",
@@ -384,17 +391,23 @@ def generate_phase34_report(
             os.replace(dest_md, bak_md)
             backed_up_md = True
     except Exception as bak_err:
+        restoration_err = None
         if backed_up_json and os.path.exists(bak_json):
             try:
                 os.replace(bak_json, dest_json)
-            except Exception:
-                pass
+            except Exception as r_e:
+                restoration_err = r_e
         for t_file in [tmp_json, tmp_md]:
             if os.path.exists(t_file):
                 try:
                     os.remove(t_file)
                 except Exception:
                     pass
+        if restoration_err is not None:
+            raise ReportAtomicityError(
+                f"Backup phase failed and restoration also failed: {restoration_err}",
+                backup_paths=[bak_json] if os.path.exists(bak_json) else []
+            ) from restoration_err
         raise bak_err
 
     # Step 3: Replace destination files atomically as a pair
@@ -406,35 +419,48 @@ def generate_phase34_report(
         os.replace(tmp_md, dest_md)
         replaced_md = True
     except Exception as replace_err:
-        # Roll back replacements and restore original pair
+        restoration_err = None
+
         if replaced_json and os.path.exists(dest_json):
             try:
                 os.remove(dest_json)
-            except Exception:
-                pass
+            except Exception as r_e:
+                restoration_err = r_e
+
         if replaced_md and os.path.exists(dest_md):
             try:
                 os.remove(dest_md)
-            except Exception:
-                pass
+            except Exception as r_e:
+                restoration_err = r_e
 
+        retained_baks = []
         if backed_up_json and os.path.exists(bak_json):
             try:
                 os.replace(bak_json, dest_json)
-            except Exception:
-                pass
+            except Exception as r_e:
+                restoration_err = r_e
+                retained_baks.append(bak_json)
+
         if backed_up_md and os.path.exists(bak_md):
             try:
                 os.replace(bak_md, dest_md)
-            except Exception:
-                pass
+            except Exception as r_e:
+                restoration_err = r_e
+                retained_baks.append(bak_md)
 
+        # Remove only temporary .tmp files
         for t_file in [tmp_json, tmp_md]:
             if os.path.exists(t_file):
                 try:
                     os.remove(t_file)
                 except Exception:
                     pass
+
+        if restoration_err is not None:
+            raise ReportAtomicityError(
+                f"Report pair replacement failed and restoration also failed: {restoration_err}",
+                backup_paths=retained_baks
+            ) from restoration_err
 
         raise replace_err
 

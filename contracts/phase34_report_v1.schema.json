@@ -131,13 +131,13 @@
           ],
           "additionalProperties": false,
           "properties": {
-            "score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-            "threshold": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-            "uncertainty": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "score": { "type": ["number", "null"], "minimum": 0.0, "maximum": 1.0 },
+            "threshold": { "type": ["number", "null"], "minimum": 0.0, "maximum": 1.0 },
+            "uncertainty": { "type": ["number", "null"], "minimum": 0.0, "maximum": 1.0 },
             "calibration_status": { "type": "string" },
             "evidence_count": { "type": "integer", "minimum": 0 },
-            "component_agreement": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-            "evidence_grounding": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "component_agreement": { "type": ["number", "null"], "minimum": 0.0, "maximum": 1.0 },
+            "evidence_grounding": { "type": ["number", "null"], "minimum": 0.0, "maximum": 1.0 },
             "veto_applied": { "type": "boolean" },
             "veto_cap": { "type": ["number", "null"], "minimum": 0.0, "maximum": 1.0 },
             "reason_codes": {

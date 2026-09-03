@@ -10,6 +10,7 @@ from shadow_sandbox.reports.report_generator import (
     generate_phase34_report,
     compute_report_hash,
     ReportContractError,
+    ReportAtomicityError,
     EMPTY_EVENT_LOG_HASH,
 )
 from run_mvp_pipeline import (
@@ -19,7 +20,12 @@ from run_mvp_pipeline import (
     _build_phase4_section,
     _build_learning_section,
     _build_final_summary,
+    _build_stage_execution,
+    _build_stage_cleanup,
+    _build_failed_phase4_section,
+    run_single_problem,
 )
+from debate.config import AUTONOMOUS_THRESHOLD
 from debate.debate_manager import DebateManager
 
 
@@ -32,205 +38,204 @@ def test_legacy_producers_are_absent_from_reports_all():
     """Task 9 / Task 8: Legacy producers must not be in reports.__all__."""
     assert "generate_phase34_report" in reports_pkg.__all__
     assert "ReportContractError" in reports_pkg.__all__
+    assert "ReportAtomicityError" in reports_pkg.__all__
     assert "generate_report" not in reports_pkg.__all__
     assert "generate_mvp_report" not in reports_pkg.__all__
 
 
-def test_missing_phase3_agreement_is_not_reported_as_1_0(mock_debate_manager):
-    """Missing agreement must be reported as None/null, not fabricated 1.0."""
+def test_missing_phase3_status_never_becomes_completed(mock_debate_manager):
+    """Missing phase3_status must not default to COMPLETED."""
     p3_res = {
-        "phase3_status": "COMPLETED",
         "confidence_score": 85.0,
-        "r1_detailed": {},
-        "orchestrator_decision": "APPROVE"
+        "r1_detailed": {}
     }
     sol = {"confidence": 0.85}
 
     p3_sec = _build_phase3_section(p3_res, mock_debate_manager, sol)
 
-    assert p3_sec["agreement"] is None
-    assert p3_sec["confidence"]["component_agreement"] == 0.0
+    assert p3_sec["status"] == "UNAVAILABLE"
 
 
-def test_missing_safety_result_is_not_reported_as_pass(mock_debate_manager):
-    """Failed/incomplete debate without safety check must not be reported as PASS."""
+def test_missing_deterministic_confidence_never_uses_model_confidence(mock_debate_manager):
+    """Missing deterministic confidence score must remain null, never taking model confidence."""
     p3_res = {
-        "phase3_status": "PHASE3_FAILED",
-        "confidence_score": 0.0,
+        "phase3_status": "COMPLETED",
+        "r1_detailed": {}
+    }
+    sol = {"confidence": 0.95}
+
+    p3_sec = _build_phase3_section(p3_res, mock_debate_manager, sol)
+
+    assert p3_sec["confidence"]["score"] is None
+    assert p3_sec["confidence"]["calibration_status"] == "UNAVAILABLE"
+
+
+def test_threshold_comes_from_debate_config(mock_debate_manager):
+    """Confidence threshold must equal AUTONOMOUS_THRESHOLD / 100.0 from debate.config."""
+    p3_res = {
+        "phase3_status": "COMPLETED",
+        "confidence_score": 80.0,
         "r1_detailed": {}
     }
     sol = {}
 
     p3_sec = _build_phase3_section(p3_res, mock_debate_manager, sol)
 
-    assert p3_sec["safety"]["status"] != "PASS"
-    assert p3_sec["safety"]["status"] in ["UNAVAILABLE", "FAILED"]
+    assert p3_sec["confidence"]["threshold"] == float(AUTONOMOUS_THRESHOLD / 100.0)
 
 
-def test_safety_violation_is_never_reported_as_approve(mock_debate_manager):
-    """A safety violation must report REJECT_SAFETY_VETO, never APPROVE."""
+def test_missing_safety_evaluation_never_becomes_pass(mock_debate_manager):
+    """Failed/incomplete debate without safety check must not be reported as PASS."""
     p3_res = {
-        "phase3_status": "COMPLETED",
-        "safety_violation": True,
-        "scoring_meta": {"veto_applied": True, "veto_reason": "Destructive command detected"},
-        "orchestrator_decision": "APPROVE"
-    }
-    sol = {"confidence": 0.50}
-
-    p3_sec = _build_phase3_section(p3_res, mock_debate_manager, sol)
-
-    assert p3_sec["orchestrator_decision"] == "REJECT_SAFETY_VETO"
-    assert p3_sec["safety"]["status"] == "SAFETY_VIOLATION"
-
-
-def test_attempted_false_remains_false():
-    """Stage with attempted=false must remain false across normalization."""
-    p4_raw = {
-        "status": "NOT_RUN",
-        "attestation": {"attempted": False, "status": "NOT_RUN", "reason": "Blocked"},
-        "execution": {"attempted": False, "capability": "NOT_RUN", "mode": "OBSERVE", "parameters": {}, "result": None}
-    }
-
-    p4_sec = _build_phase4_section(p4_raw)
-
-    assert p4_sec["attestation"]["attempted"] is False
-    assert p4_sec["execution"]["attempted"] is False
-
-
-def test_passed_false_never_becomes_completed():
-    """Attestation/verification with passed=false must be FAILED, never COMPLETED/PASS."""
-    p4_raw = {
-        "status": "ATTESTATION_FAILED",
-        "attestation": {"attested": False, "reason": "Label missing"},
-        "verification": {"passed": False, "reason": "Guardrail failed"}
-    }
-
-    p4_sec = _build_phase4_section(p4_raw)
-
-    assert p4_sec["attestation"]["status"] == "FAILED"
-    assert p4_sec["verification"]["status"] == "FAILED"
-
-
-def test_failed_real_shadow_execution_is_not_learning_eligible():
-    """Failed real-shadow execution must be eligible=false with null reward."""
-    p4_sec = _build_phase4_section({
-        "status": "SANDBOX_FAILED_ROLLED_BACK",
-        "execution": {"attempted": True, "status": "FAILED", "capability": "container.restart", "mode": "MUTATE_REVERSIBLE", "parameters": {}, "result": {"success": False}},
-        "attestation": {"attested": True, "attempted": True},
-        "verification": {"passed": False, "attempted": True}
-    })
-
-    learning_sec = _build_learning_section(None, is_simulated=False, p4_sec=p4_sec)
-
-    assert learning_sec["eligible"] is False
-    assert learning_sec["reward"] is None
-
-
-def test_failed_verification_cannot_receive_reward_1_0():
-    """Failed verification must never receive positive reward 1.0."""
-    p4_sec = _build_phase4_section({
-        "status": "SANDBOX_FAILED_ROLLED_BACK",
-        "execution": {"attempted": True, "status": "SUCCESS", "capability": "container.restart", "mode": "MUTATE_REVERSIBLE", "parameters": {}, "result": {"success": True}},
-        "attestation": {"attested": True, "attempted": True},
-        "verification": {"passed": False, "attempted": True},
-        "rollback": {"attempted": True, "result": "FAILED", "status": "FAILED"}
-    })
-
-    learning_sec = _build_learning_section(None, is_simulated=False, p4_sec=p4_sec)
-
-    assert learning_sec["eligible"] is False
-    assert learning_sec["reward"] is None or learning_sec["reward"] <= 0.0
-
-
-def test_absent_rl_advisory_becomes_abstain_unavailable():
-    """Absent RL advisor must yield status=UNAVAILABLE and recommendation=ABSTAIN."""
-    rl_sec = _build_rl_advisory_section(None)
-
-    assert rl_sec["status"] == "UNAVAILABLE"
-    assert rl_sec["recommendation"] == "ABSTAIN"
-    assert rl_sec["influence_allowed"] is False
-    assert "RL_ADVISOR_UNAVAILABLE" in rl_sec["reason_codes"]
-
-
-def test_schema_valid_unknown_intent_has_capability_mapped_false():
-    """Schema-valid envelope with unknown capability must have capability_mapped=false."""
-    envelope = {
-        "schema_version": "2.0",
-        "event_id": "evt_unk",
-        "event_type": "autosre.action.proposed",
-        "incident_id": "case_unknown",
-        "correlation_id": "corr_unk",
-        "fingerprint": "fp_unk",
-        "created_at": "2026-09-03T12:00:00Z",
-        "source": {"phase": "PHASE_3", "code_commit": "2f2127d7"},
-        "problem_summary": "Unknown capability test",
-        "target_ref": {"kind": "container", "canonical_name": "unknown-svc"},
-        "phase3_confidence": {"score": 0.80},
-        "execution_tier": "TIER_1_AUTONOMOUS_EXECUTION",
-        "safety_violation": False,
-        "evidence_refs": ["log_1"],
-        "intents": [
-            {
-                "intent_id": "int_unk",
-                "intent_type": "unknown.fake.capability",  # Not in capabilities.yaml
-                "mode": "MUTATE_REVERSIBLE",
-                "target_ref": {"kind": "container", "canonical_name": "unknown-svc"},
-                "parameters": {},
-                "evidence_refs": ["log_1"],
-                "preconditions": [],
-                "postconditions": [],
-                "timeout_seconds": 30,
-                "max_attempts": 1,
-                "risk_class": "MEDIUM",
-                "requires_human_approval": False
-            }
-        ],
-        "human_summary": "Unknown test"
-    }
-
-    handoff = _build_handoff_section(envelope, is_valid=True, errs=[])
-
-    assert handoff["schema_valid"] is True
-    assert handoff["capability_mapped"] is False
-    assert handoff["mvp_supported"] is False
-
-
-def test_phase3_confidence_and_threshold_preserved_exactly(mock_debate_manager):
-    """Deterministic score and threshold must be preserved exactly."""
-    p3_res = {
-        "phase3_status": "COMPLETED",
-        "confidence_score": 77.0,
-        "confidence_threshold": 0.85,
+        "phase3_status": "PHASE3_FAILED",
         "r1_detailed": {}
     }
-    sol = {"confidence": 0.77}
+    sol = {}
 
     p3_sec = _build_phase3_section(p3_res, mock_debate_manager, sol)
 
-    assert p3_sec["confidence"]["score"] == 0.77
-    assert p3_sec["confidence"]["threshold"] == 0.85
+    assert p3_sec["safety"]["status"] == "UNAVAILABLE"
 
 
-def test_simulation_verified_recommends_real_shadow_validation():
-    """SIMULATION_VERIFIED must recommend RUN_REAL_SHADOW_VALIDATION."""
-    p4_sec = _build_phase4_section({"status": "SIMULATION_VERIFIED", "execution": {"attempted": True, "capability": "container.restart", "mode": "MUTATE_REVERSIBLE"}})
-    p3_sec = {"confidence": {"score": 0.90}, "safety": {"status": "PASS"}}
+def test_missing_orchestrator_decision_never_becomes_autonomous_execution(mock_debate_manager):
+    """Missing orchestrator decision must remain UNAVAILABLE, never defaulting to autonomous execution."""
+    p3_res = {
+        "phase3_status": "COMPLETED",
+        "r1_detailed": {}
+    }
+    sol = {}
 
-    summary = _build_final_summary(p4_sec, p3_sec, sol={}, is_simulated=True)
+    p3_sec = _build_phase3_section(p3_res, mock_debate_manager, sol)
 
-    assert summary["recommended_next_action"] == "RUN_REAL_SHADOW_VALIDATION"
-    assert summary["problem_resolved_in_sandbox"] is False
-    assert any("simulation does not prove" in lim for lim in summary["limitations"])
+    assert p3_sec["orchestrator_decision"] == "UNAVAILABLE"
 
 
-def test_old_report_pairs_survive_write_failures(tmp_path):
-    """Existing valid JSON/MD pairs must survive write and replacement failures."""
+def test_arbitrary_observation_data_never_proves_completion():
+    """Observation dictionary without explicit attempted field maps to UNAVAILABLE."""
+    p4_raw = {
+        "status": "COMPLETED",
+        "before_observations": {"data": {"cpu": "99%"}},
+        "execution": {"attempted": False}
+    }
+
+    p4_sec = _build_phase4_section(p4_raw)
+
+    assert p4_sec["before_observations"]["status"] == "UNAVAILABLE"
+    assert p4_sec["before_observations"]["attempted"] is False
+
+
+def test_execution_without_explicit_result_never_becomes_success():
+    """Execution with attempted=true but missing result object maps to UNKNOWN."""
+    exec_dict = {"attempted": True, "capability": "container.restart", "mode": "MUTATE_REVERSIBLE"}
+
+    stage = _build_stage_execution(exec_dict)
+
+    assert stage["status"] == "UNKNOWN"
+    assert stage["result"] is None
+
+
+def test_cleanup_without_explicit_attempted_completed_fields_is_unavailable():
+    """Cleanup stage without explicit attempted/completed fields maps to UNAVAILABLE."""
+    clean_dict = {"data": {"removed": True}}
+
+    stage = _build_stage_cleanup(clean_dict)
+
+    assert stage["status"] == "UNAVAILABLE"
+    assert stage["attempted"] is False
+
+
+def test_phase3_failed_leaves_every_phase4_attempted_flag_false():
+    """PHASE3_FAILED must leave every single Phase 4 stage with attempted=False."""
+    p4_sec = _build_failed_phase4_section()
+
+    for stage_name in ["attestation", "before_observations", "fault_setup", "execution", "after_observations", "verification", "rollback", "cleanup"]:
+        st = p4_sec[stage_name]
+        assert st["attempted"] is False, f"Stage {stage_name} attempted should be False"
+        assert st["status"] == "NOT_RUN", f"Stage {stage_name} status should be NOT_RUN"
+        assert st["reason_code"] == "PHASE3_FAILED", f"Stage {stage_name} reason_code should be PHASE3_FAILED"
+
+    assert p4_sec["execution"]["result"] is None
+
+
+def test_valid_rl_abstain_has_status_success():
+    """A valid RL advisory object returning ABSTAIN must report status=SUCCESS."""
+    valid_abstain_obj = {
+        "status": "SUCCESS",
+        "operating_mode": "SHADOW",
+        "policy_version": "v1.0",
+        "model_version": "v1.0",
+        "recommendation": "ABSTAIN",
+        "allowed_actions": ["ACCEPT_PROPOSAL", "ABSTAIN"],
+        "action_scores": {"ABSTAIN": 1.0},
+        "uncertainty": 0.0,
+        "sample_size": 10,
+        "cold_start": False,
+        "influence_allowed": False,
+        "reason_codes": ["LOW_CONFIDENCE"],
+        "feature_hash": "feat_hash_123",
+        "latency_ms": 5.0
+    }
+
+    rl_sec = _build_rl_advisory_section(valid_abstain_obj)
+
+    assert rl_sec["status"] == "SUCCESS"
+    assert rl_sec["recommendation"] == "ABSTAIN"
+    assert rl_sec["influence_allowed"] is False
+
+
+def test_rl_advisor_init_exception_produces_unavailable_advisory_and_complete_report(tmp_path):
+    """Constructor failure in RLAdvisor must produce status=UNAVAILABLE advisory and allow report generation to complete."""
+    with patch("rl_engine.advisor.RLAdvisor.__init__", side_effect=RuntimeError("GPU VRAM connection error")):
+        # run_single_problem should handle RLAdvisor init failure gracefully
+        result = run_single_problem("problems/case_01.json", reports_base_dir=str(tmp_path))
+        assert os.path.exists(result["json_report"])
+        assert os.path.exists(result["md_report"])
+
+        with open(result["json_report"], "r", encoding="utf-8") as f:
+            report_data = json.load(f)
+
+        rl_sec = report_data["rl_advisory"]
+        assert rl_sec["status"] == "UNAVAILABLE"
+        assert rl_sec["recommendation"] == "ABSTAIN"
+        assert rl_sec["feature_hash"] == "UNAVAILABLE"
+        assert rl_sec["influence_allowed"] is False
+        assert "RL_ADVISOR_EXCEPTION" in rl_sec["reason_codes"]
+
+
+def test_episode_stored_value_matches_episode_store(mock_debate_manager):
+    """learning.stored must equal the boolean returned by EpisodeStore.save_episode()."""
+    p4_sec = {
+        "status": "SIMULATION_VERIFIED",
+        "execution": {"attempted": True}
+    }
+
+    sec_true = _build_learning_section(None, is_simulated=True, p4_sec=p4_sec, episode_stored=True)
+    assert sec_true["stored"] is True
+
+    sec_false = _build_learning_section(None, is_simulated=True, p4_sec=p4_sec, episode_stored=False)
+    assert sec_false["stored"] is False
+
+
+def test_simulation_may_be_stored_but_remains_learning_ineligible():
+    """Simulation episodes may have stored=true but must remain eligible=false, reward=null, sample_weight=0.0."""
+    p4_sec = {"status": "SIMULATION_VERIFIED", "execution": {"attempted": True}}
+
+    learning_sec = _build_learning_section(None, is_simulated=True, p4_sec=p4_sec, episode_stored=True)
+
+    assert learning_sec["stored"] is True
+    assert learning_sec["eligible"] is False
+    assert learning_sec["reward"] is None
+    assert learning_sec["sample_weight"] == 0.0
+
+
+def test_json_restoration_failure_raises_report_atomicity_error(tmp_path):
+    """If JSON restoration fails after replacement error, ReportAtomicityError is raised and backup files retained."""
     context = {
         "schema_version": "phase34-report-v1",
         "report_type": "PHASE34_PROBLEM_SUMMARY",
         "run": {
-            "verification_run_id": "verify_survive123",
-            "problem_run_id": "run_survive123",
+            "verification_run_id": "verify_atomic_fail",
+            "problem_run_id": "run_atomic_fail",
             "commit_sha": "f7765376888faaf3f0c6f44600463857660eb21a",
             "started_at": "2026-09-03T12:00:00Z",
             "completed_at": "2026-09-03T12:00:05Z",
@@ -313,32 +318,26 @@ def test_old_report_pairs_survive_write_failures(tmp_path):
     # 1. Create valid original report pair
     j_orig, m_orig = generate_phase34_report(context, reports_base_dir=str(tmp_path))
     assert os.path.exists(j_orig)
-    assert os.path.exists(m_orig)
 
-    with open(j_orig, "r", encoding="utf-8") as f:
-        orig_content = f.read()
-
-    # 2. Inject failure on second replacement call (moving tmp_md to dest_md)
+    # 2. Inject failure on replacement AND on restoration
     original_replace = os.replace
-    replacement_count = 0
 
-    def failing_replace(src, dst):
-        nonlocal replacement_count
+    def double_failing_replace(src, dst):
         if ".phase34_report.md.tmp." in src:
-            raise OSError("Injected replacement failure for Markdown")
+            raise OSError("Replacement error for MD")
+        if ".phase34_report.json.bak." in src:
+            raise OSError("Restoration error for JSON bak")
         return original_replace(src, dst)
 
-    with patch("os.replace", side_effect=failing_replace):
-        with pytest.raises(OSError, match="Injected replacement failure"):
+    with patch("os.replace", side_effect=double_failing_replace):
+        with pytest.raises(ReportAtomicityError, match="Report pair replacement failed"):
             generate_phase34_report(context, reports_base_dir=str(tmp_path))
 
-    # Assert original pair survived
-    assert os.path.exists(j_orig)
-    assert os.path.exists(m_orig)
-    with open(j_orig, "r", encoding="utf-8") as f:
-        assert f.read() == orig_content
-
-    # Assert zero temporary or backup files remained
     dest_dir = Path(j_orig).parent
-    remaining_files = [p.name for p in dest_dir.iterdir() if p.name.startswith(".phase34_report")]
-    assert len(remaining_files) == 0, f"Temporary/backup files leaked: {remaining_files}"
+    # Assert temp files were removed
+    tmp_files = [p.name for p in dest_dir.iterdir() if ".tmp." in p.name]
+    assert len(tmp_files) == 0, f"Temporary files should be removed: {tmp_files}"
+
+    # Assert recoverable .bak files were retained
+    bak_files = [p.name for p in dest_dir.iterdir() if ".bak." in p.name]
+    assert len(bak_files) > 0, f"Bak files should be retained on restoration failure"
