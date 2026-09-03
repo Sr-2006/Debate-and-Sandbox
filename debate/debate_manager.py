@@ -322,9 +322,14 @@ class DebateManager:
         json_path, md_path = logger.save()
 
         # Derive authoritative output fields for the report adapter
-        _safety_evaluated = not meta_info["safety_violation"] and phase3_status == "COMPLETED"
+        _safety_evaluated = True
         _reason_codes = ["DIAGNOSED"] if phase3_status == "COMPLETED" and not meta_info["safety_violation"] else (["SAFETY_VETO"] if meta_info["safety_violation"] else [])
-        _orchestrator_decision = execution_tier if phase3_status != "PHASE3_FAILED" else "REJECT_PHASE3_FAILED"
+        if meta_info["safety_violation"]:
+            _orchestrator_decision = "REJECT_SAFETY_VETO"
+        elif phase3_status == "PHASE3_FAILED":
+            _orchestrator_decision = "REJECT_PHASE3_FAILED"
+        else:
+            _orchestrator_decision = execution_tier
 
         return {
             "original_problem": problem,
@@ -333,7 +338,7 @@ class DebateManager:
             "solution": orchestration_result["solution"],
 
             "confidence_score": calc_confidence,
-            "confidence_threshold": AUTONOMOUS_THRESHOLD,
+            "confidence_threshold": AUTONOMOUS_THRESHOLD / 100.0,
             "execution_tier": execution_tier,
             "safety_violation": meta_info["safety_violation"],
             "safety_evaluated": _safety_evaluated,
