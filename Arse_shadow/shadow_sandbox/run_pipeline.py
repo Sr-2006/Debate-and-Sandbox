@@ -63,13 +63,23 @@ def get_verifier(verifier_name: str, is_simulated: bool = False):
         return ServiceHealthVerifier()
 
 
-def check_attestation(shadow_target: str, blocked: bool = False, is_simulated: bool = False) -> Dict[str, Any]:
-    if blocked or not shadow_target or shadow_target in ["shadow-None", "shadow-unknown-service"]:
+def check_attestation(
+    target_name: str,
+    target_kind: str = "container",
+    target_ref: Optional[Dict[str, Any]] = None,
+    blocked: bool = False,
+    is_simulated: bool = False
+) -> Dict[str, Any]:
+    if blocked or not target_name or target_name in ["None", "unknown", "unknown-service", "shadow-None", "shadow-unknown-service", ""]:
         return {
             "attempted": False,
             "attested": False,
             "reason": "Execution blocked before target attestation"
         }
+
+    canonical = (target_ref.get("canonical_name") if target_ref else None) or target_name
+    shadow_target = canonical if canonical.startswith("shadow-") else f"shadow-{canonical}"
+
     if is_simulated:
         return {
             "attempted": True,
@@ -79,23 +89,33 @@ def check_attestation(shadow_target: str, blocked: bool = False, is_simulated: b
             "container_id": "c1234567890a",
             "status": "running"
         }
-    try:
-        import docker
-        client = docker.from_env()
-        container = client.containers.get(shadow_target)
+
+    from shadow_sandbox.attestation import attest_shadow_environment
+
+    passed, reason_code, reason_msg = attest_shadow_environment(
+        target_name=canonical,
+        target_kind=target_kind,
+        target_ref=target_ref
+    )
+
+    reason_str = reason_code.value if hasattr(reason_code, "value") else str(reason_code)
+
+    if passed:
         return {
             "attempted": True,
             "attested": True,
             "target": shadow_target,
-            "container_id": container.id[:12],
-            "status": container.status
+            "status": "running",
+            "reason_code": reason_str,
+            "reason": reason_msg
         }
-    except Exception as e:
+    else:
         return {
             "attempted": True,
             "attested": False,
             "target": shadow_target,
-            "reason": f"Target attestation failed for {shadow_target}: {e}"
+            "reason_code": reason_str,
+            "reason": reason_msg
         }
 
 
@@ -179,7 +199,7 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
         doc_exec = get_executor("docker_executor", is_simulated=simulated_flag)
         obs_target = shadow_target or "shadow-container"
         obs_res = doc_exec.execute(obs_target, "observe.logs.search", {"max_lines": 50})
-        obs_attestation = check_attestation(obs_target, blocked=False, is_simulated=simulated_flag)
+        obs_attestation = check_attestation(canonical_target or obs_target, target_kind=target_ref.get("kind", "container") if target_ref else "container", target_ref=target_ref, blocked=False, is_simulated=simulated_flag)
         sm.transition_to("REPORTED", ReasonCode.DIAGNOSED, "Read-only observation complete")
         duration_ms = int((time.perf_counter() - start_time) * 1000)
         return {
@@ -243,7 +263,8 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
         }
 
     # Perform real target attestation check
-    attestation = check_attestation(shadow_target, blocked=False, is_simulated=simulated_flag)
+    target_kind_name = target_ref.get("kind", "container") if target_ref else "container"
+    attestation = check_attestation(canonical_target or shadow_target, target_kind=target_kind_name, target_ref=target_ref, blocked=False, is_simulated=simulated_flag)
     if not attestation.get("attested"):
         sm.transition_to("ATTESTATION_FAILED", ReasonCode.ATTESTATION_FAILED, f"Target attestation failed for {shadow_target}")
         duration_ms = int((time.perf_counter() - start_time) * 1000)

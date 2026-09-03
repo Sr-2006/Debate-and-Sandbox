@@ -31,6 +31,11 @@ jobs:
         run: |
           python -m pytest -q tests/test_mvp_unit.py -x -vv
 
+      - name: Run Attestation & State Machine Unit Tests
+        run: |
+          python -m pytest -q Arse_shadow/shadow_sandbox/tests/test_attestation.py -vv
+          python -m pytest -q Arse_shadow/shadow_sandbox/tests/test_state_machine.py -vv
+
       - name: Run RL Unit Tests
         run: |
           python -m pytest -q rl_engine/tests

@@ -31,16 +31,16 @@ def attest_shadow_environment(
     if kind in ["container", "storage", "volume", "database", "cache"]:
         try:
             client = docker.from_env()
-            container = client.containers.get(shadow_target)
+            try:
+                container = client.containers.get(shadow_target)
+            except docker.errors.NotFound:
+                return False, ReasonCode.ATTESTATION_FAILED, f"Container {shadow_target} not found"
+
             if not container:
                 return False, ReasonCode.ATTESTATION_FAILED, f"Container {shadow_target} not found"
-            
+
             labels = container.labels or {}
             env_label = labels.get("autosre.environment")
-            if not env_label:
-                topo_group = labels.get("ara.topology.group", "")
-                if topo_group.startswith("shadow-") or container.name.startswith("shadow-"):
-                    env_label = "shadow"
             if not env_label:
                 return False, ReasonCode.ATTESTATION_FAILED, f"Container {shadow_target} missing mandatory label 'autosre.environment'"
             if env_label.lower() != "shadow":
@@ -54,7 +54,21 @@ def attest_shadow_environment(
                 if run_id_label != req_run_id:
                     return False, ReasonCode.ATTESTATION_FAILED, f"Container {shadow_target} run_id '{run_id_label}' != expected '{req_run_id}'"
 
-            return True, ReasonCode.DIAGNOSED, f"Attestation verified for container {shadow_target} (status={container.status})"
+            # Container status check (must be running)
+            container_status = getattr(container, "status", "running")
+            if container_status != "running":
+                return False, ReasonCode.ATTESTATION_FAILED, f"Container {shadow_target} status is '{container_status}', expected 'running'"
+
+            # Health check inspection (if configured)
+            attrs = getattr(container, "attrs", {}) or {}
+            state_health = attrs.get("State", {}).get("Health")
+            if state_health and isinstance(state_health, dict):
+                health_status = state_health.get("Status")
+                if health_status and health_status.lower() != "healthy":
+                    return False, ReasonCode.ATTESTATION_FAILED, f"Container {shadow_target} health status is '{health_status}', expected 'healthy'"
+
+            return True, ReasonCode.DIAGNOSED, f"Attestation verified for container {shadow_target} (status={container_status})"
+
         except docker.errors.NotFound:
             return False, ReasonCode.ATTESTATION_FAILED, f"Container {shadow_target} not found"
         except Exception as e:
