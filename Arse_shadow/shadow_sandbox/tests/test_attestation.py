@@ -160,6 +160,7 @@ def test_attestation_simulated_mode_no_infra_calls(mock_docker, mock_subproc):
 
 # 10. High-risk action skips attestation
 @patch("docker.from_env")
+@patch.dict("os.environ", {"DEBATE_MOCK_LLM": "0"})
 def test_high_risk_action_skips_attestation(mock_docker):
     envelope = make_valid_v2_envelope()
     envelope["safety_violation"] = True
@@ -191,6 +192,7 @@ def test_already_prefixed_target_not_double_prefixed(mock_docker):
 
 # 12. Pipeline-level target normalization test: shadow-postgres-db -> shadow-postgres-db (never shadow-shadow-postgres-db)
 @patch("docker.from_env")
+@patch.dict("os.environ", {"DEBATE_MOCK_LLM": "0"})
 def test_pipeline_target_normalization_no_double_prefix(mock_docker):
     mock_container = MagicMock()
     mock_container.labels = {"autosre.environment": "shadow"}
@@ -207,6 +209,7 @@ def test_pipeline_target_normalization_no_double_prefix(mock_docker):
 
 # 13. High-risk + low confidence priority test -> HUMAN_REVIEW_REQUIRED
 @patch("docker.from_env")
+@patch.dict("os.environ", {"DEBATE_MOCK_LLM": "0"})
 def test_high_risk_and_low_confidence_priority(mock_docker):
     envelope = make_valid_v2_envelope()
     envelope["safety_violation"] = True
@@ -225,6 +228,7 @@ def test_high_risk_and_low_confidence_priority(mock_docker):
 
 # 14. Low-confidence failed attestation test -> ATTESTATION_FAILED before executor call
 @patch("docker.from_env")
+@patch.dict("os.environ", {"DEBATE_MOCK_LLM": "0"})
 def test_low_confidence_failed_attestation_blocks_executor(mock_docker):
     mock_docker.return_value.containers.get.side_effect = docker.errors.NotFound("Container not found")
 
