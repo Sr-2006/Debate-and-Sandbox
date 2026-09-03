@@ -39,19 +39,23 @@
         "rl_operating_mode",
         "laptop1_transport"
       ],
+      "additionalProperties": false,
       "properties": {
-        "verification_run_id": { "type": "string" },
-        "problem_run_id": { "type": "string" },
-        "commit_sha": { "type": "string" },
-        "started_at": { "type": "string" },
-        "completed_at": { "type": "string" },
+        "verification_run_id": { "type": "string", "minLength": 1 },
+        "problem_run_id": { "type": "string", "minLength": 1 },
+        "commit_sha": { "type": "string", "minLength": 1 },
+        "started_at": { "type": "string", "format": "date-time" },
+        "completed_at": { "type": "string", "format": "date-time" },
         "duration_ms": { "type": "number", "minimum": 0 },
         "execution_mode": {
           "type": "string",
           "enum": ["SIMULATION", "REAL_SHADOW"]
         },
         "mock_llm": { "type": "boolean" },
-        "rl_operating_mode": { "type": "string" },
+        "rl_operating_mode": {
+          "type": "string",
+          "enum": ["DISABLED", "SHADOW", "ADVISORY"]
+        },
         "laptop1_transport": { "type": ["string", "boolean", "object", "null"] }
       }
     },
@@ -67,14 +71,15 @@
         "target",
         "expected_behavior"
       ],
+      "additionalProperties": false,
       "properties": {
-        "case_id": { "type": "string" },
-        "source_file": { "type": "string" },
-        "input_hash": { "type": "string" },
-        "raw_input": { "type": ["object", "null"] },
-        "normalized_incident": { "type": ["object", "null"] },
-        "severity": { "type": "string" },
-        "target": { "type": ["object", "string", "null"] },
+        "case_id": { "type": "string", "minLength": 1 },
+        "source_file": { "type": "string", "minLength": 1 },
+        "input_hash": { "type": "string", "minLength": 1 },
+        "raw_input": { "type": "object" },
+        "normalized_incident": { "type": "object" },
+        "severity": { "type": "string", "minLength": 1 },
+        "target": { "type": ["object", "string"] },
         "expected_behavior": { "type": "string" }
       }
     },
@@ -93,21 +98,23 @@
         "orchestrator_decision",
         "reason_codes"
       ],
+      "additionalProperties": false,
       "properties": {
-        "status": { "type": "string" },
-        "started_at": { "type": "string" },
-        "completed_at": { "type": "string" },
+        "status": { "type": "string", "minLength": 1 },
+        "started_at": { "type": "string", "format": "date-time" },
+        "completed_at": { "type": "string", "format": "date-time" },
         "duration_ms": { "type": "number", "minimum": 0 },
         "agents": {
           "type": "object",
           "required": ["optimist", "critic", "fact_checker"],
+          "additionalProperties": false,
           "properties": {
             "optimist": { "$ref": "#/definitions/agent_structure" },
             "critic": { "$ref": "#/definitions/agent_structure" },
             "fact_checker": { "$ref": "#/definitions/agent_structure" }
           }
         },
-        "agreement": { "type": ["number", "boolean", "string", "object", "null"] },
+        "agreement": { "type": ["number", "null"], "minimum": 0.0, "maximum": 1.0 },
         "confidence": {
           "type": "object",
           "required": [
@@ -122,16 +129,17 @@
             "veto_cap",
             "reason_codes"
           ],
+          "additionalProperties": false,
           "properties": {
             "score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-            "threshold": { "type": "number" },
-            "uncertainty": { "type": "number" },
+            "threshold": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "uncertainty": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
             "calibration_status": { "type": "string" },
             "evidence_count": { "type": "integer", "minimum": 0 },
-            "component_agreement": { "type": "number" },
-            "evidence_grounding": { "type": "number" },
+            "component_agreement": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "evidence_grounding": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
             "veto_applied": { "type": "boolean" },
-            "veto_cap": { "type": ["number", "null"] },
+            "veto_cap": { "type": ["number", "null"], "minimum": 0.0, "maximum": 1.0 },
             "reason_codes": {
               "type": "array",
               "items": { "type": "string" }
@@ -159,14 +167,15 @@
         "mvp_supported",
         "target_resolved"
       ],
+      "additionalProperties": false,
       "properties": {
-        "status": { "type": "string" },
+        "status": { "type": "string", "minLength": 1 },
         "schema_valid": { "type": "boolean" },
         "validation_errors": {
           "type": "array",
           "items": { "type": "string" }
         },
-        "payload_hash": { "type": "string" },
+        "payload_hash": { "type": "string", "minLength": 1 },
         "exact_envelope": { "type": ["object", "null"] },
         "capability_mapped": { "type": "boolean" },
         "mvp_supported": { "type": "boolean" },
@@ -191,26 +200,33 @@
         "feature_hash",
         "latency_ms"
       ],
+      "additionalProperties": false,
       "properties": {
-        "status": { "type": "string" },
-        "operating_mode": { "type": "string" },
+        "status": { "type": "string", "minLength": 1 },
+        "operating_mode": {
+          "type": "string",
+          "enum": ["DISABLED", "SHADOW", "ADVISORY"]
+        },
         "policy_version": { "type": "string" },
         "model_version": { "type": "string" },
-        "recommendation": { "type": "string" },
+        "recommendation": {
+          "type": "string",
+          "enum": ["ACCEPT_PROPOSAL", "OBSERVE_FIRST", "REQUIRE_HUMAN_REVIEW", "ABSTAIN"]
+        },
         "allowed_actions": {
           "type": "array",
           "items": { "type": "string" }
         },
         "action_scores": { "type": "object" },
-        "uncertainty": { "type": "number" },
+        "uncertainty": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
         "sample_size": { "type": "integer", "minimum": 0 },
         "cold_start": { "type": "boolean" },
-        "influence_allowed": { "type": "boolean" },
+        "influence_allowed": { "type": "boolean", "enum": [false] },
         "reason_codes": {
           "type": "array",
           "items": { "type": "string" }
         },
-        "feature_hash": { "type": "string" },
+        "feature_hash": { "type": "string", "minLength": 1 },
         "latency_ms": { "type": "number", "minimum": 0 }
       }
     },
@@ -234,36 +250,17 @@
         "state_history",
         "reason_codes"
       ],
+      "additionalProperties": false,
       "properties": {
-        "status": { "type": "string" },
-        "started_at": { "type": "string" },
-        "completed_at": { "type": "string" },
+        "status": { "type": "string", "minLength": 1 },
+        "started_at": { "type": "string", "format": "date-time" },
+        "completed_at": { "type": "string", "format": "date-time" },
         "duration_ms": { "type": "number", "minimum": 0 },
         "exact_input": { "type": ["object", "null"] },
         "target": { "type": ["object", "string", "null"] },
-        "attestation": {
-          "type": "object",
-          "required": [
-            "status",
-            "attempted",
-            "attested",
-            "target",
-            "environment",
-            "reason_code",
-            "reason"
-          ],
-          "properties": {
-            "status": { "type": "string" },
-            "attempted": { "type": "boolean" },
-            "attested": { "type": "boolean" },
-            "target": { "type": ["object", "string", "null"] },
-            "environment": { "type": "string" },
-            "reason_code": { "type": "string" },
-            "reason": { "type": "string" }
-          }
-        },
-        "before_observations": { "type": ["array", "object", "null"] },
-        "fault_setup": { "type": ["object", "null"] },
+        "attestation": { "$ref": "#/definitions/stage_structure" },
+        "before_observations": { "$ref": "#/definitions/stage_structure" },
+        "fault_setup": { "$ref": "#/definitions/stage_structure" },
         "execution": {
           "type": "object",
           "required": [
@@ -275,6 +272,7 @@
             "result",
             "duration_ms"
           ],
+          "additionalProperties": false,
           "properties": {
             "status": { "type": "string" },
             "attempted": { "type": "boolean" },
@@ -285,10 +283,10 @@
             "duration_ms": { "type": "number", "minimum": 0 }
           }
         },
-        "after_observations": { "type": ["array", "object", "null"] },
-        "verification": { "type": ["object", "null"] },
-        "rollback": { "type": ["object", "null"] },
-        "cleanup": { "type": ["object", "null"] },
+        "after_observations": { "$ref": "#/definitions/stage_structure" },
+        "verification": { "$ref": "#/definitions/stage_structure" },
+        "rollback": { "$ref": "#/definitions/stage_structure" },
+        "cleanup": { "$ref": "#/definitions/stage_structure" },
         "state_history": { "type": "array" },
         "reason_codes": {
           "type": "array",
@@ -309,15 +307,16 @@
         "feature_hash",
         "stored"
       ],
+      "additionalProperties": false,
       "properties": {
-        "status": { "type": "string" },
-        "episode_id": { "type": "string" },
+        "status": { "type": "string", "minLength": 1 },
+        "episode_id": { "type": "string", "minLength": 1 },
         "eligible": { "type": "boolean" },
         "eligibility_reason": { "type": "string" },
         "behavior_action": { "type": "string" },
         "reward": { "type": ["number", "null"] },
-        "sample_weight": { "type": "number" },
-        "feature_hash": { "type": "string" },
+        "sample_weight": { "type": "number", "minimum": 0 },
+        "feature_hash": { "type": "string", "minLength": 1 },
         "stored": { "type": "boolean" }
       }
     },
@@ -335,8 +334,9 @@
         "confidence_result",
         "limitations"
       ],
+      "additionalProperties": false,
       "properties": {
-        "outcome": { "type": "string" },
+        "outcome": { "type": "string", "minLength": 1 },
         "problem_resolved_in_sandbox": { "type": "boolean" },
         "execution_performed": { "type": "boolean" },
         "human_intervention_required": { "type": "boolean" },
@@ -358,15 +358,41 @@
         "report_hash",
         "errors"
       ],
+      "additionalProperties": false,
       "properties": {
         "report_schema_valid": { "type": "boolean" },
-        "input_hash": { "type": "string" },
-        "payload_hash": { "type": "string" },
-        "event_log_hash": { "type": "string" },
-        "report_hash": { "type": "string" },
+        "input_hash": { "type": "string", "minLength": 1 },
+        "payload_hash": { "type": "string", "minLength": 1 },
+        "event_log_hash": { "type": "string", "minLength": 1 },
+        "report_hash": { "type": "string", "minLength": 1 },
         "errors": {
           "type": "array",
           "items": { "type": "string" }
+        }
+      }
+    }
+  },
+  "if": {
+    "properties": {
+      "run": {
+        "properties": {
+          "execution_mode": { "const": "SIMULATION" }
+        }
+      }
+    }
+  },
+  "then": {
+    "properties": {
+      "learning": {
+        "properties": {
+          "eligible": { "const": false },
+          "reward": { "type": "null" },
+          "sample_weight": { "const": 0.0 }
+        }
+      },
+      "rl_advisory": {
+        "properties": {
+          "influence_allowed": { "const": false }
         }
       }
     }
@@ -384,15 +410,36 @@
         "latency_ms",
         "error"
       ],
+      "additionalProperties": false,
       "properties": {
-        "name": { "type": "string" },
-        "status": { "type": "string" },
+        "name": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "minLength": 1 },
         "prompt": { "type": "string" },
         "raw_response": { "type": "string" },
         "parsed_response": { "type": ["object", "array", "string", "null"] },
         "valid": { "type": "boolean" },
         "latency_ms": { "type": "number", "minimum": 0 },
         "error": { "type": ["string", "null"] }
+      }
+    },
+    "stage_structure": {
+      "type": "object",
+      "required": [
+        "status",
+        "attempted",
+        "reason_code",
+        "reason",
+        "data",
+        "duration_ms"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "string" },
+        "attempted": { "type": "boolean" },
+        "reason_code": { "type": "string" },
+        "reason": { "type": "string" },
+        "data": { "type": ["object", "array"] },
+        "duration_ms": { "type": "number", "minimum": 0 }
       }
     }
   }

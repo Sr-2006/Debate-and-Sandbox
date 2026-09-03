@@ -4,18 +4,18 @@
   "type": "object",
   "required": [
     "schema_version",
-    "event_id",
-    "event_type",
-    "run_id",
-    "case_id",
+    "sequence",
     "timestamp",
+    "verification_run_id",
+    "problem_run_id",
+    "case_id",
     "phase",
-    "step",
+    "component",
+    "event",
     "status",
     "reason_code",
-    "reason",
-    "payload",
-    "integrity_hash"
+    "duration_ms",
+    "details"
   ],
   "additionalProperties": false,
   "properties": {
@@ -23,53 +23,59 @@
       "type": "string",
       "enum": ["phase34-event-v1"]
     },
-    "event_id": {
-      "type": "string",
-      "minLength": 1
-    },
-    "event_type": {
-      "type": "string",
-      "minLength": 1
-    },
-    "run_id": {
-      "type": "string"
-    },
-    "case_id": {
-      "type": "string"
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
     },
     "timestamp": {
       "type": "string",
       "format": "date-time"
     },
+    "verification_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "problem_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "case_id": {
+      "type": "string",
+      "minLength": 1
+    },
     "phase": {
       "type": "string",
       "enum": [
+        "INPUT",
         "PHASE_3",
         "PHASE_3_TO_4_HANDOFF",
         "RL_ADVISORY",
         "PHASE_4",
         "LEARNING",
-        "FINAL_SUMMARY",
-        "INTEGRITY"
+        "REPORTING"
       ]
     },
-    "step": {
-      "type": "string"
+    "component": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event": {
+      "type": "string",
+      "minLength": 1
     },
     "status": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "reason_code": {
       "type": ["string", "null"]
     },
-    "reason": {
-      "type": ["string", "null"]
+    "duration_ms": {
+      "type": "number",
+      "minimum": 0
     },
-    "payload": {
+    "details": {
       "type": "object"
-    },
-    "integrity_hash": {
-      "type": ["string", "null"]
     }
   }
 }

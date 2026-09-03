@@ -1,14 +1,37 @@
 import json
 from pathlib import Path
+from datetime import datetime
 import pytest
-from jsonschema import validate, ValidationError
+from jsonschema import Draft7Validator, FormatChecker
 
 CONTRACTS_DIR = Path(__file__).parent.parent
 
-def load_schema(schema_name: str):
+def get_format_checker() -> FormatChecker:
+    fc = FormatChecker()
+    @fc.checks("date-time")
+    def check_datetime(val):
+        if not isinstance(val, str):
+            return True
+        try:
+            if "T" not in val:
+                return False
+            datetime.fromisoformat(val.replace("Z", "+00:00"))
+            return True
+        except Exception:
+            return False
+    return fc
+
+def load_schema(schema_name: str) -> dict:
     schema_path = CONTRACTS_DIR / schema_name
     with open(schema_path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+def validate_instance(instance: dict, schema: dict):
+    Draft7Validator.check_schema(schema)
+    validator = Draft7Validator(schema, format_checker=get_format_checker())
+    errors = sorted(validator.iter_errors(instance), key=lambda e: e.path)
+    if errors:
+        raise ValueError(f"Schema validation failed with errors: {[e.message for e in errors]}")
 
 @pytest.fixture
 def report_schema():
@@ -19,14 +42,14 @@ def event_schema():
     return load_schema("phase34_event_v1.schema.json")
 
 @pytest.fixture
-def valid_report_dict():
+def valid_simulation_report():
     return {
         "schema_version": "phase34-report-v1",
         "report_type": "PHASE34_PROBLEM_SUMMARY",
         "run": {
-            "verification_run_id": "verif_run_001",
-            "problem_run_id": "prob_run_001",
-            "commit_sha": "abc123def456",
+            "verification_run_id": "verif_001",
+            "problem_run_id": "prob_001",
+            "commit_sha": "78ab8a379af77a7fc35175e72621d06227afdb6a",
             "started_at": "2026-09-03T12:00:00Z",
             "completed_at": "2026-09-03T12:00:05Z",
             "duration_ms": 5000,
@@ -85,18 +108,18 @@ def valid_report_dict():
             "agreement": 1.0,
             "confidence": {
                 "score": 0.95,
-                "threshold": 0.8,
+                "threshold": 0.80,
                 "uncertainty": 0.05,
                 "calibration_status": "CALIBRATED",
                 "evidence_count": 3,
                 "component_agreement": 1.0,
-                "evidence_grounding": 0.9,
+                "evidence_grounding": 0.90,
                 "veto_applied": False,
                 "veto_cap": None,
-                "reason_codes": []
+                "reason_codes": ["DIAGNOSED"]
             },
             "safety": {"status": "PASS"},
-            "selected_intent": {"intent_type": "workload.restart"},
+            "selected_intent": {"intent_type": "postgres.setting.update"},
             "orchestrator_decision": "APPROVE",
             "reason_codes": ["DIAGNOSED"]
         },
@@ -136,27 +159,68 @@ def valid_report_dict():
             "attestation": {
                 "status": "PASSED",
                 "attempted": True,
-                "attested": True,
-                "target": "postgres-db",
-                "environment": "SHADOW_SANDBOX",
-                "reason_code": "ATTESTED",
-                "reason": "Target verified"
+                "reason_code": "DIAGNOSED",
+                "reason": "Target verified",
+                "data": {"status": "running"},
+                "duration_ms": 10
             },
-            "before_observations": [],
-            "fault_setup": {"status": "SUCCESS"},
+            "before_observations": {
+                "status": "COMPLETED",
+                "attempted": True,
+                "reason_code": "DIAGNOSED",
+                "reason": "Pre-state captured",
+                "data": {},
+                "duration_ms": 50
+            },
+            "fault_setup": {
+                "status": "COMPLETED",
+                "attempted": True,
+                "reason_code": "DIAGNOSED",
+                "reason": "Fault injected",
+                "data": {},
+                "duration_ms": 20
+            },
             "execution": {
                 "status": "SUCCESS",
                 "attempted": True,
-                "capability": "workload.restart",
-                "mode": "SIMULATION",
-                "parameters": {},
+                "capability": "postgres.setting.update",
+                "mode": "MUTATE_REVERSIBLE",
+                "parameters": {"setting_name": "max_connections", "value": "200"},
                 "result": {"output": "ok"},
                 "duration_ms": 100
             },
-            "after_observations": [],
-            "verification": {"status": "PASSED"},
-            "rollback": None,
-            "cleanup": {"status": "COMPLETED"},
+            "after_observations": {
+                "status": "COMPLETED",
+                "attempted": True,
+                "reason_code": "DIAGNOSED",
+                "reason": "Post-state captured",
+                "data": {},
+                "duration_ms": 50
+            },
+            "verification": {
+                "status": "PASSED",
+                "attempted": True,
+                "reason_code": "VERIFIED_RECOVERED",
+                "reason": "Postcondition verified",
+                "data": {},
+                "duration_ms": 30
+            },
+            "rollback": {
+                "status": "NOT_RUN",
+                "attempted": False,
+                "reason_code": "NOT_RUN",
+                "reason": "No rollback needed",
+                "data": {},
+                "duration_ms": 0
+            },
+            "cleanup": {
+                "status": "COMPLETED",
+                "attempted": True,
+                "reason_code": "DIAGNOSED",
+                "reason": "Cleanup done",
+                "data": {},
+                "duration_ms": 10
+            },
             "state_history": [],
             "reason_codes": ["VERIFIED_RECOVERED"]
         },
@@ -193,67 +257,156 @@ def valid_report_dict():
         }
     }
 
-def test_valid_report_schema(report_schema, valid_report_dict):
-    validate(instance=valid_report_dict, schema=report_schema)
+# 1. Valid complete simulation report
+def test_valid_complete_simulation_report(report_schema, valid_simulation_report):
+    validate_instance(valid_simulation_report, report_schema)
 
-def test_invalid_schema_version(report_schema, valid_report_dict):
-    valid_report_dict["schema_version"] = "v1.0"
-    with pytest.raises(ValidationError):
-        validate(instance=valid_report_dict, schema=report_schema)
-
-def test_missing_required_section(report_schema, valid_report_dict):
-    del valid_report_dict["integrity"]
-    with pytest.raises(ValidationError):
-        validate(instance=valid_report_dict, schema=report_schema)
-
-def test_unavailable_work_structure(report_schema, valid_report_dict):
-    # Unavailable work pattern represented cleanly with NOT_RUN
-    valid_report_dict["phase_4"]["status"] = "NOT_RUN"
-    valid_report_dict["phase_4"]["reason_codes"] = ["BLOCKED_SAFETY"]
-    valid_report_dict["phase_4"]["attestation"] = {
+# 2. Valid blocked/NOT_RUN report
+def test_valid_blocked_not_run_report(report_schema, valid_simulation_report):
+    rep = valid_simulation_report.copy()
+    rep["phase_4"]["execution"] = {
         "status": "NOT_RUN",
         "attempted": False,
-        "attested": False,
-        "target": "postgres-db",
-        "environment": "SHADOW_SANDBOX",
+        "capability": "postgres.setting.update",
+        "mode": "MUTATE_HIGH_RISK",
+        "parameters": {},
+        "result": {"reason": "High risk action requires human review"},
+        "duration_ms": 0
+    }
+    rep["phase_4"]["attestation"] = {
+        "status": "NOT_RUN",
+        "attempted": False,
         "reason_code": "BLOCKED_SAFETY",
-        "reason": "High-risk mutation requires human approval"
+        "reason": "Stage blocked by safety gate",
+        "data": {},
+        "duration_ms": 0
     }
-    validate(instance=valid_report_dict, schema=report_schema)
+    validate_instance(rep, report_schema)
 
-def test_valid_event_schema(event_schema):
-    valid_event = {
+# 3. Missing top-level field rejected
+def test_missing_top_level_field_rejected(report_schema, valid_simulation_report):
+    rep = valid_simulation_report.copy()
+    del rep["integrity"]
+    with pytest.raises(ValueError):
+        validate_instance(rep, report_schema)
+
+# 4. Extra top-level field rejected
+def test_extra_top_level_field_rejected(report_schema, valid_simulation_report):
+    rep = valid_simulation_report.copy()
+    rep["extra_field"] = "not_allowed"
+    with pytest.raises(ValueError):
+        validate_instance(rep, report_schema)
+
+# 5. Extra nested field rejected
+def test_extra_nested_field_rejected(report_schema, valid_simulation_report):
+    rep = valid_simulation_report.copy()
+    rep["run"]["extra_nested"] = "not_allowed"
+    with pytest.raises(ValueError):
+        validate_instance(rep, report_schema)
+
+# 6. Null stage object rejected
+def test_null_stage_object_rejected(report_schema, valid_simulation_report):
+    rep = valid_simulation_report.copy()
+    rep["phase_4"]["rollback"] = None
+    with pytest.raises(ValueError):
+        validate_instance(rep, report_schema)
+
+# 7. Malformed timestamp rejected
+def test_malformed_timestamp_rejected(report_schema, valid_simulation_report):
+    rep = valid_simulation_report.copy()
+    rep["run"]["started_at"] = "invalid-date-format"
+    with pytest.raises(ValueError):
+        validate_instance(rep, report_schema)
+
+# 8. Confidence outside 0–1 rejected
+def test_confidence_outside_range_rejected(report_schema, valid_simulation_report):
+    rep = valid_simulation_report.copy()
+    rep["phase_3"]["confidence"]["score"] = 1.5
+    with pytest.raises(ValueError):
+        validate_instance(rep, report_schema)
+
+# 9. Invalid RL recommendation rejected
+def test_invalid_rl_recommendation_rejected(report_schema, valid_simulation_report):
+    rep = valid_simulation_report.copy()
+    rep["rl_advisory"]["recommendation"] = "INVALID_REC"
+    with pytest.raises(ValueError):
+        validate_instance(rep, report_schema)
+
+# 10. influence_allowed=true rejected
+def test_influence_allowed_true_rejected(report_schema, valid_simulation_report):
+    rep = valid_simulation_report.copy()
+    rep["rl_advisory"]["influence_allowed"] = True
+    with pytest.raises(ValueError):
+        validate_instance(rep, report_schema)
+
+# 11. Simulation with eligible=true rejected
+def test_simulation_eligible_true_rejected(report_schema, valid_simulation_report):
+    rep = valid_simulation_report.copy()
+    rep["learning"]["eligible"] = True
+    with pytest.raises(ValueError):
+        validate_instance(rep, report_schema)
+
+# 12. Simulation with non-null reward rejected
+def test_simulation_non_null_reward_rejected(report_schema, valid_simulation_report):
+    rep = valid_simulation_report.copy()
+    rep["learning"]["reward"] = 1.0
+    with pytest.raises(ValueError):
+        validate_instance(rep, report_schema)
+
+# 13. Simulation with nonzero sample weight rejected
+def test_simulation_nonzero_sample_weight_rejected(report_schema, valid_simulation_report):
+    rep = valid_simulation_report.copy()
+    rep["learning"]["sample_weight"] = 1.0
+    with pytest.raises(ValueError):
+        validate_instance(rep, report_schema)
+
+# Event Schema Tests
+@pytest.fixture
+def valid_event():
+    return {
         "schema_version": "phase34-event-v1",
-        "event_id": "evt_001",
-        "event_type": "phase34.step.completed",
-        "run_id": "run_001",
-        "case_id": "case_01",
+        "sequence": 1,
         "timestamp": "2026-09-03T12:00:00Z",
+        "verification_run_id": "verif_001",
+        "problem_run_id": "prob_001",
+        "case_id": "case_01",
         "phase": "PHASE_3",
-        "step": "debate_round_1",
+        "component": "debate_manager",
+        "event": "round_completed",
         "status": "SUCCESS",
-        "reason_code": None,
-        "reason": None,
-        "payload": {"agreement": 1.0},
-        "integrity_hash": "hash_evt_001"
+        "reason_code": "DIAGNOSED",
+        "duration_ms": 1500,
+        "details": {"agreement": 1.0}
     }
-    validate(instance=valid_event, schema=event_schema)
 
-def test_invalid_event_schema(event_schema):
-    invalid_event = {
-        "schema_version": "phase34-event-v1",
-        "event_id": "evt_001",
-        "event_type": "phase34.step.completed",
-        "run_id": "run_001",
-        "case_id": "case_01",
-        "timestamp": "2026-09-03T12:00:00Z",
-        "phase": "INVALID_PHASE",
-        "step": "debate_round_1",
-        "status": "SUCCESS",
-        "reason_code": None,
-        "reason": None,
-        "payload": {},
-        "integrity_hash": None
-    }
-    with pytest.raises(ValidationError):
-        validate(instance=invalid_event, schema=event_schema)
+# 14. Valid event accepted
+def test_valid_event_accepted(event_schema, valid_event):
+    validate_instance(valid_event, event_schema)
+
+# 15. Event without sequence rejected
+def test_event_without_sequence_rejected(event_schema, valid_event):
+    evt = valid_event.copy()
+    del evt["sequence"]
+    with pytest.raises(ValueError):
+        validate_instance(evt, event_schema)
+
+# 16. Event sequence zero rejected
+def test_event_sequence_zero_rejected(event_schema, valid_event):
+    evt = valid_event.copy()
+    evt["sequence"] = 0
+    with pytest.raises(ValueError):
+        validate_instance(evt, event_schema)
+
+# 17. Event with extra property rejected
+def test_event_extra_property_rejected(event_schema, valid_event):
+    evt = valid_event.copy()
+    evt["extra_prop"] = "invalid"
+    with pytest.raises(ValueError):
+        validate_instance(evt, event_schema)
+
+# 18. Event with malformed timestamp rejected
+def test_event_malformed_timestamp_rejected(event_schema, valid_event):
+    evt = valid_event.copy()
+    evt["timestamp"] = "bad-timestamp"
+    with pytest.raises(ValueError):
+        validate_instance(evt, event_schema)

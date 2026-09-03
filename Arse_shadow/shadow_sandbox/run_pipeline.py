@@ -162,7 +162,13 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
     mode = first_intent.get("mode", "OBSERVE")
     target_ref = first_intent.get("target_ref") or v2_envelope.get("target_ref") or {}
     canonical_target = target_ref.get("canonical_name")
-    shadow_target = f"shadow-{canonical_target}" if canonical_target else None
+    shadow_target = (
+        canonical_target
+        if canonical_target and canonical_target.startswith("shadow-")
+        else f"shadow-{canonical_target}"
+        if canonical_target
+        else None
+    )
     parameters = first_intent.get("parameters", {})
     requires_human_approval = bool(first_intent.get("requires_human_approval", False) or v2_envelope.get("safety_violation", False))
 
@@ -173,7 +179,7 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
 
     diag_conf = v2_envelope.get("phase3_confidence", {}).get("score", 0.0)
 
-    # Check routing conditions
+    # 1. Reject unknown/unmapped capability
     if intent_type == "NO_SUPPORTED_ACTION" or not mapping_valid:
         sm.transition_to("BLOCKED_UNKNOWN_CAPABILITY", ReasonCode.BLOCKED_UNKNOWN_CAPABILITY, f"Unmapped intent '{intent_type}'")
         duration_ms = int((time.perf_counter() - start_time) * 1000)
@@ -184,7 +190,7 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
             "attestation": {"attempted": False, "attested": False, "reason": "Execution blocked before target attestation"},
             "before_observations": {},
             "fault_setup": {"injected": False},
-            "execution": {"capability": intent_type, "parameters": parameters, "result": {"success": False, "reason": "No supported action"}, "duration_ms": 0},
+            "execution": {"attempted": False, "capability": intent_type, "parameters": parameters, "result": {"success": False, "reason": "No supported action"}, "duration_ms": 0},
             "after_observations": {},
             "verification": {"passed": False},
             "rollback": {"attempted": False, "result": None},
@@ -193,31 +199,7 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
             "duration_ms": duration_ms
         }
 
-    if diag_conf is not None and diag_conf < 0.50:
-        # Run read-only observation only
-        sm.transition_to("OBSERVED_BEFORE", ReasonCode.DIAGNOSED, "Running read-only observation for low confidence case")
-        doc_exec = get_executor("docker_executor", is_simulated=simulated_flag)
-        obs_target = shadow_target or "shadow-container"
-        obs_res = doc_exec.execute(obs_target, "observe.logs.search", {"max_lines": 50})
-        obs_attestation = check_attestation(canonical_target or obs_target, target_kind=target_ref.get("kind", "container") if target_ref else "container", target_ref=target_ref, blocked=False, is_simulated=simulated_flag)
-        sm.transition_to("REPORTED", ReasonCode.DIAGNOSED, "Read-only observation complete")
-        duration_ms = int((time.perf_counter() - start_time) * 1000)
-        return {
-            "status": "READ_ONLY_OBSERVED",
-            "exact_input": v2_envelope,
-            "target": target_ref,
-            "attestation": obs_attestation,
-            "before_observations": {"obs": obs_res},
-            "fault_setup": {"injected": False},
-            "execution": {"capability": "observe.logs.search", "parameters": {"max_lines": 50}, "result": obs_res, "duration_ms": 0},
-            "after_observations": {"obs": obs_res},
-            "verification": {"passed": bool(obs_res.get("success", False))},
-            "rollback": {"attempted": False, "result": None},
-            "cleanup": {"completed": True},
-            "state_history": sm.get_summary()["history"],
-            "duration_ms": duration_ms
-        }
-
+    # 2. Block safety violation / high-risk / human-approval action (MUST precede low confidence branch)
     if mode == "MUTATE_HIGH_RISK" or requires_human_approval:
         sm.transition_to("BLOCKED_SAFETY_VIOLATION", ReasonCode.BLOCKED_SAFETY, f"High risk action {intent_type} requires human approval")
 
@@ -229,7 +211,7 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
             "attestation": {"attempted": False, "attested": False, "reason": "Execution blocked before target attestation"},
             "before_observations": {},
             "fault_setup": {"injected": False},
-            "execution": {"capability": intent_type, "parameters": parameters, "result": {"success": False, "reason": "High risk action requires human review"}, "duration_ms": 0},
+            "execution": {"attempted": False, "capability": intent_type, "parameters": parameters, "result": {"success": False, "reason": "High risk action requires human review"}, "duration_ms": 0},
             "after_observations": {},
             "verification": {"passed": False},
             "rollback": {"attempted": False, "result": None},
@@ -238,6 +220,7 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
             "duration_ms": duration_ms
         }
 
+    # 3. Reject unsupported MVP capability
     if not is_supported:
         sm.transition_to("UNSUPPORTED_IN_MVP", ReasonCode.BLOCKED_UNKNOWN_CAPABILITY, f"Capability '{intent_type}' is not supported in MVP")
         duration_ms = int((time.perf_counter() - start_time) * 1000)
@@ -249,6 +232,7 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
             "before_observations": {},
             "fault_setup": {"injected": False},
             "execution": {
+                "attempted": False,
                 "capability": intent_type,
                 "parameters": parameters,
                 "result": {"success": False, "reason": f"Capability '{intent_type}' has mvp_supported: false. Implementation deferred."},
@@ -262,9 +246,55 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
             "duration_ms": duration_ms
         }
 
+    # 4. Handle low-confidence observation (Attest target BEFORE calling observation executor)
+    if diag_conf is not None and diag_conf < 0.50:
+        obs_target = shadow_target or "shadow-container"
+        target_kind_name = target_ref.get("kind", "container") if target_ref else "container"
+        obs_attestation = check_attestation(obs_target, target_kind=target_kind_name, target_ref=target_ref, blocked=False, is_simulated=simulated_flag)
+
+        if not obs_attestation.get("attested"):
+            sm.transition_to("ATTESTATION_FAILED", ReasonCode.ATTESTATION_FAILED, f"Target attestation failed for {obs_target}")
+            duration_ms = int((time.perf_counter() - start_time) * 1000)
+            return {
+                "status": "ATTESTATION_FAILED",
+                "exact_input": v2_envelope,
+                "target": target_ref,
+                "attestation": obs_attestation,
+                "before_observations": {},
+                "fault_setup": {"injected": False},
+                "execution": {"attempted": False, "capability": "observe.logs.search", "parameters": {"max_lines": 50}, "result": {"success": False, "reason": "Attestation failed"}, "duration_ms": 0},
+                "after_observations": {},
+                "verification": {"passed": False},
+                "rollback": {"attempted": False, "result": None},
+                "cleanup": {"completed": True},
+                "state_history": sm.get_summary()["history"],
+                "duration_ms": duration_ms
+            }
+
+        sm.transition_to("OBSERVED_BEFORE", ReasonCode.DIAGNOSED, "Running read-only observation for low confidence case")
+        doc_exec = get_executor("docker_executor", is_simulated=simulated_flag)
+        obs_res = doc_exec.execute(obs_target, "observe.logs.search", {"max_lines": 50})
+        sm.transition_to("REPORTED", ReasonCode.DIAGNOSED, "Read-only observation complete")
+        duration_ms = int((time.perf_counter() - start_time) * 1000)
+        return {
+            "status": "READ_ONLY_OBSERVED",
+            "exact_input": v2_envelope,
+            "target": target_ref,
+            "attestation": obs_attestation,
+            "before_observations": {"obs": obs_res},
+            "fault_setup": {"injected": False},
+            "execution": {"attempted": True, "capability": "observe.logs.search", "parameters": {"max_lines": 50}, "result": obs_res, "duration_ms": 0},
+            "after_observations": {"obs": obs_res},
+            "verification": {"passed": bool(obs_res.get("success", False))},
+            "rollback": {"attempted": False, "result": None},
+            "cleanup": {"completed": True},
+            "state_history": sm.get_summary()["history"],
+            "duration_ms": duration_ms
+        }
+
     # Perform real target attestation check
     target_kind_name = target_ref.get("kind", "container") if target_ref else "container"
-    attestation = check_attestation(canonical_target or shadow_target, target_kind=target_kind_name, target_ref=target_ref, blocked=False, is_simulated=simulated_flag)
+    attestation = check_attestation(shadow_target, target_kind=target_kind_name, target_ref=target_ref, blocked=False, is_simulated=simulated_flag)
     if not attestation.get("attested"):
         sm.transition_to("ATTESTATION_FAILED", ReasonCode.ATTESTATION_FAILED, f"Target attestation failed for {shadow_target}")
         duration_ms = int((time.perf_counter() - start_time) * 1000)
@@ -275,7 +305,7 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
             "attestation": attestation,
             "before_observations": {},
             "fault_setup": {"injected": False},
-            "execution": {"capability": intent_type, "parameters": parameters, "result": {"success": False, "reason": "Attestation failed"}, "duration_ms": 0},
+            "execution": {"attempted": False, "capability": intent_type, "parameters": parameters, "result": {"success": False, "reason": "Attestation failed"}, "duration_ms": 0},
             "after_observations": {},
             "verification": {"passed": False},
             "rollback": {"attempted": False, "result": None},
@@ -342,7 +372,7 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
             "attestation": attestation,
             "before_observations": before_obs,
             "fault_setup": fault_info,
-            "execution": {"capability": intent_type, "parameters": parameters, "result": {"success": False, "reason": "Pre-state read failed"}, "duration_ms": 0},
+            "execution": {"attempted": False, "capability": intent_type, "parameters": parameters, "result": {"success": False, "reason": "Pre-state read failed"}, "duration_ms": 0},
             "after_observations": {},
             "verification": {"passed": False},
             "rollback": {"attempted": False, "result": None},
@@ -449,6 +479,7 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
         "before_observations": before_obs,
         "fault_setup": fault_info,
         "execution": {
+            "attempted": True,
             "capability": intent_type,
             "parameters": parameters,
             "result": exec_res,
