@@ -2,225 +2,381 @@
 """
 shadow_sandbox/reports/report_generator.py
 
-Unified Report Generator for Phase 3 Debate + Phase 4 Shadow Sandbox.
-Generates exact JSON context reports and deterministic Markdown renderings under:
-reports/<incident_id>/<run_id>.json
-reports/<incident_id>/<run_id>.md
+Canonical Phase 3+4 Report Producer.
+Generates validated JSON context reports and deterministic Markdown renderings under:
+reports/<verification_run_id>/cases/<case_id>/phase34_report.json
+reports/<verification_run_id>/cases/<case_id>/phase34_report.md
 """
 
 import os
 import sys
 import json
-from datetime import datetime, timezone
+import copy
+import uuid
+import hashlib
+from pathlib import Path
+from datetime import datetime
 from typing import Dict, Any, Tuple, Optional
+from jsonschema import Draft7Validator, FormatChecker
 
 REPORTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "reports"))
+CONTRACTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "contracts"))
+SCHEMA_FILE = os.path.join(CONTRACTS_DIR, "phase34_report_v1.schema.json")
 
-def render_markdown_report(ctx: Dict[str, Any]) -> str:
-    """Renders a deterministic Markdown report from recorded JSON report context."""
-    incident_id = ctx.get("incident_id", "unknown")
-    run_id = ctx.get("run_id", "unknown")
-    started_at = ctx.get("started_at", "N/A")
-    completed_at = ctx.get("completed_at", "N/A")
+EMPTY_EVENT_LOG_HASH = hashlib.sha256(b"").hexdigest()
 
-    prob = ctx.get("problem", {})
-    p3 = ctx.get("phase_3", {})
-    handoff = ctx.get("phase_3_to_4_handoff", {})
-    p4 = ctx.get("phase_4", {})
-    learning = ctx.get("learning", {})
-    summary = ctx.get("final_summary", {})
+class ReportContractError(ValueError):
+    """Raised when a report context fails contract schema validation."""
+    pass
 
 
-    agents = p3.get("agents", {})
-    optimist = agents.get("optimist", {})
-    critic = agents.get("critic", {})
-    fact_checker = agents.get("fact_checker", {})
-    orchestrator = p3.get("orchestrator", {})
-    conf = p3.get("confidence", {})
+def get_format_checker() -> FormatChecker:
+    fc = FormatChecker()
+    @fc.checks("date-time")
+    def check_datetime(val):
+        if not isinstance(val, str):
+            return True
+        try:
+            if "T" not in val:
+                return False
+            datetime.fromisoformat(val.replace("Z", "+00:00"))
+            return True
+        except Exception:
+            return False
+    return fc
+
+
+def load_report_schema() -> dict:
+    with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def compute_report_hash(report: dict) -> str:
+    """
+    Calculates deterministic SHA-256 hash of report.
+    Algorithm:
+    1. Deep-copy the report.
+    2. Set integrity.report_hash to an empty string.
+    3. Serialize using json.dumps(..., sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    4. Encode as UTF-8.
+    5. Return SHA-256 hexadecimal digest.
+    """
+    copied = copy.deepcopy(report)
+    if "integrity" not in copied or not isinstance(copied["integrity"], dict):
+        copied["integrity"] = {}
+    copied["integrity"]["report_hash"] = ""
+
+    serialized = json.dumps(
+        copied,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _render_stage_section(title: str, stage: dict) -> list[str]:
+    lines = [f"## {title}"]
+    if not isinstance(stage, dict):
+        lines.append("- **Status**: `NOT_RUN`")
+        return lines
+
+    for k in ["status", "attempted", "reason_code", "reason", "duration_ms"]:
+        if k in stage:
+            lines.append(f"- **{k.replace('_', ' ').title()}**: `{stage[k]}`")
+
+    if "capability" in stage:
+        lines.append(f"- **Capability**: `{stage['capability']}`")
+    if "mode" in stage:
+        lines.append(f"- **Mode**: `{stage['mode']}`")
+
+    data = stage.get("data")
+    if data is not None:
+        lines.append("```json")
+        lines.append(json.dumps(data, indent=2, ensure_ascii=False))
+        lines.append("```")
+
+    parameters = stage.get("parameters")
+    if parameters is not None:
+        lines.append("- **Parameters**:")
+        lines.append("```json")
+        lines.append(json.dumps(parameters, indent=2, ensure_ascii=False))
+        lines.append("```")
+
+    result = stage.get("result")
+    if result is not None:
+        lines.append("- **Result**:")
+        lines.append("```json")
+        lines.append(json.dumps(result, indent=2, ensure_ascii=False))
+        lines.append("```")
+
+    return lines
+
+
+def _render_phase34_markdown(report: dict) -> str:
+    """Renders deterministic Markdown from validated report dict."""
+    summary = report.get("final_summary", {})
+    run = report.get("run", {})
+    prob = report.get("problem", {})
+    p3 = report.get("phase_3", {})
+    handoff = report.get("phase_3_to_4_handoff", {})
+    rl = report.get("rl_advisory", {})
+    p4 = report.get("phase_4", {})
+    learning = report.get("learning", {})
+    integrity = report.get("integrity", {})
 
     lines = [
-        f"# Incident Remediation Report: {incident_id}",
-        f"**Run ID**: `{run_id}` | **Started**: {started_at} | **Completed**: {completed_at}\n",
-        "---",
-        "## 1. Problem Overview",
-        f"- **Incident ID**: `{incident_id}`",
-        f"- **Normalized Problem**: {prob.get('normalized_problem', 'N/A')}",
-        f"- **Expected Behavior**: {prob.get('expected_behavior', 'System operating normally within performance bounds')}\n",
-        "## 2. Original Telemetry / Input",
+        "# Phase 3–4 Problem Summary",
+        "## Final Summary",
+        f"- **Outcome**: `{summary.get('outcome', 'NOT_RUN')}`",
+        f"- **Problem Resolved in Sandbox**: `{summary.get('problem_resolved_in_sandbox', False)}`",
+        f"- **Execution Performed**: `{summary.get('execution_performed', False)}`",
+        f"- **Human Intervention Required**: `{summary.get('human_intervention_required', False)}`",
+        f"- **Recommended Next Action**: `{summary.get('recommended_next_action', 'REQUIRE_HUMAN_REVIEW')}`",
+        f"- **What Happened**: {summary.get('what_happened', '')}",
+        f"- **Why It Happened**: {summary.get('why_it_happened', '')}",
+        f"- **Safety Result**: `{summary.get('safety_result', 'UNKNOWN')}`",
+        f"- **Confidence Result**: `{summary.get('confidence_result', 'UNKNOWN')}`",
+        "- **Limitations**:",
+    ]
+
+    limitations = summary.get("limitations", [])
+    if isinstance(limitations, list):
+        for lim in limitations:
+            lines.append(f"  - {lim}")
+    else:
+        lines.append(f"  - {limitations}")
+
+    lines.extend([
+        "",
+        "## Run Identity",
+        f"- **Verification Run ID**: `{run.get('verification_run_id', '')}`",
+        f"- **Problem Run ID**: `{run.get('problem_run_id', '')}`",
+        f"- **Commit SHA**: `{run.get('commit_sha', '')}`",
+        f"- **Started At**: `{run.get('started_at', '')}`",
+        f"- **Completed At**: `{run.get('completed_at', '')}`",
+        f"- **Duration (ms)**: `{run.get('duration_ms', 0)}`",
+        f"- **Execution Mode**: `{run.get('execution_mode', '')}`",
+        f"- **Mock LLM**: `{run.get('mock_llm', False)}`",
+        f"- **RL Operating Mode**: `{run.get('rl_operating_mode', '')}`",
+        f"- **Laptop 1 Transport**: `{run.get('laptop1_transport', None)}`",
+        "",
+        "## Problem Input",
+        f"- **Case ID**: `{prob.get('case_id', '')}`",
+        f"- **Source File**: `{prob.get('source_file', '')}`",
+        f"- **Input Hash**: `{prob.get('input_hash', '')}`",
+        f"- **Severity**: `{prob.get('severity', '')}`",
+        f"- **Target**: `{prob.get('target', {})}`",
+        f"- **Expected Behavior**: {prob.get('expected_behavior', '')}",
+        "- **Raw Input**:",
         "```json",
         json.dumps(prob.get("raw_input", {}), indent=2, ensure_ascii=False),
-        "```\n",
-        "## 3. Optimist Analysis",
-        f"- **Latency**: {optimist.get('latency_ms', 0)} ms",
+        "```",
+        "- **Normalized Incident**:",
         "```json",
-        json.dumps(optimist.get("response", {}), indent=2, ensure_ascii=False),
-        "```\n",
-        "## 4. Critic Analysis",
-        f"- **Latency**: {critic.get('latency_ms', 0)} ms",
+        json.dumps(prob.get("normalized_incident", {}), indent=2, ensure_ascii=False),
+        "```",
+        "",
+        "## Phase 3 Debate",
+        f"- **Status**: `{p3.get('status', 'NOT_RUN')}`",
+        f"- **Started At**: `{p3.get('started_at', '')}`",
+        f"- **Completed At**: `{p3.get('completed_at', '')}`",
+        f"- **Duration (ms)**: `{p3.get('duration_ms', 0)}`",
+        f"- **Agreement**: `{p3.get('agreement', None)}`",
+        f"- **Orchestrator Decision**: `{p3.get('orchestrator_decision', '')}`",
+        "- **Selected Intent**:",
         "```json",
-        json.dumps(critic.get("response", {}), indent=2, ensure_ascii=False),
-        "```\n",
-        "## 5. Fact Checker Analysis",
-        f"- **Latency**: {fact_checker.get('latency_ms', 0)} ms",
+        json.dumps(p3.get("selected_intent"), indent=2, ensure_ascii=False),
+        "```",
+        f"- **Reason Codes**: `{p3.get('reason_codes', [])}`",
+        "- **Agents**:",
+    ])
+
+    agents = p3.get("agents", {})
+    for agent_name in ["optimist", "critic", "fact_checker"]:
+        ag = agents.get(agent_name, {})
+        lines.append(f"  ### Agent: {agent_name}")
+        lines.append(f"  - **Status**: `{ag.get('status', 'NOT_RUN')}`")
+        lines.append(f"  - **Valid**: `{ag.get('valid', False)}`")
+        lines.append(f"  - **Latency (ms)**: `{ag.get('latency_ms', 0)}`")
+        lines.append(f"  - **Error**: `{ag.get('error', None)}`")
+
+    conf = p3.get("confidence", {})
+    lines.extend([
+        "",
+        "## Phase 3 Confidence and Safety",
+        f"- **Score**: `{conf.get('score', 0.0)}`",
+        f"- **Threshold**: `{conf.get('threshold', 0.8)}`",
+        f"- **Uncertainty**: `{conf.get('uncertainty', 0.0)}`",
+        f"- **Calibration Status**: `{conf.get('calibration_status', '')}`",
+        f"- **Evidence Count**: `{conf.get('evidence_count', 0)}`",
+        f"- **Component Agreement**: `{conf.get('component_agreement', 0.0)}`",
+        f"- **Evidence Grounding**: `{conf.get('evidence_grounding', 0.0)}`",
+        f"- **Veto Applied**: `{conf.get('veto_applied', False)}`",
+        f"- **Veto Cap**: `{conf.get('veto_cap', None)}`",
+        f"- **Reason Codes**: `{conf.get('reason_codes', [])}`",
+        "- **Safety**:",
         "```json",
-        json.dumps(fact_checker.get("response", {}), indent=2, ensure_ascii=False),
-        "```\n",
-        "## 6. Debate Agreement and Disagreements",
-        f"- **Component Agreement**: {conf.get('reasoning', 'Analyzed agent convergence')}",
-        f"- **Phase 3 Total Latency**: {p3.get('duration_ms', 0)} ms\n",
-        "## 7. Final Orchestrator Decision",
+        json.dumps(p3.get("safety"), indent=2, ensure_ascii=False),
+        "```",
+        "",
+        "## Phase 3 to Phase 4 Handoff",
+        f"- **Status**: `{handoff.get('status', '')}`",
+        f"- **Schema Valid**: `{handoff.get('schema_valid', False)}`",
+        f"- **Validation Errors**: `{handoff.get('validation_errors', [])}`",
+        f"- **Payload Hash**: `{handoff.get('payload_hash', '')}`",
+        f"- **Capability Mapped**: `{handoff.get('capability_mapped', False)}`",
+        f"- **MVP Supported**: `{handoff.get('mvp_supported', False)}`",
+        f"- **Target Resolved**: `{handoff.get('target_resolved', False)}`",
+        "- **Exact Envelope**:",
         "```json",
-        json.dumps(orchestrator.get("response", {}), indent=2, ensure_ascii=False),
-        "```\n",
-        "## 8. Confidence Breakdown",
-        f"- **Phase 3 Confidence Score**: `{conf.get('score', 0.0)}`",
-        f"- **Reasoning**: {conf.get('reasoning', 'N/A')}",
-        f"- **Evidence Refs**: `{conf.get('evidence_refs', [])}`\n",
-        "## 9. Exact Phase 3 -> Phase 4 Envelope",
-        f"- **Payload Hash**: `{handoff.get('payload_hash', 'N/A')}`",
-        f"- **Validation Passed**: `{handoff.get('validation', {}).get('passed', False)}`",
-        "```json",
-        json.dumps(handoff.get("exact_envelope", {}), indent=2, ensure_ascii=False),
-        "```\n",
-        "## 10. Shadow Target and Before-State",
-        f"- **Target**: `{p4.get('target', {})}`",
-        f"- **Attestation**: `{p4.get('attestation', {})}`",
-        "```json",
-        json.dumps(p4.get("before_observations", {}), indent=2, ensure_ascii=False),
-        "```\n",
-        "## 11. Executed Capability and Parameters",
-        f"- **Capability**: `{p4.get('execution', {}).get('capability', 'N/A')}`",
-        "```json",
-        json.dumps(p4.get("execution", {}).get("parameters", {}), indent=2, ensure_ascii=False),
-        "```\n",
-        "## 12. Execution Observations",
-        f"- **Execution Duration**: {p4.get('execution', {}).get('duration_ms', 0)} ms",
-        "```json",
-        json.dumps(p4.get("after_observations", {}), indent=2, ensure_ascii=False),
-        "```\n",
-        "## 13. Verification Result",
-        "```json",
-        json.dumps(p4.get("verification", {}), indent=2, ensure_ascii=False),
-        "```\n",
-        "## 14. Rollback and Cleanup",
-        f"- **Rollback Attempted**: `{p4.get('rollback', {}).get('attempted', False)}`",
-        f"- **Rollback Result**: `{p4.get('rollback', {}).get('result', None)}`",
-        "```json",
-        json.dumps(p4.get("cleanup", {}), indent=2, ensure_ascii=False),
-        "```\n",
-        "## 15. Final Outcome",
-        f"- **Status**: `{p4.get('status', 'UNKNOWN')}`",
-        f"- **Problem Resolved in Sandbox**: `{summary.get('problem_resolved_in_sandbox', False)}`",
-        f"- **Outcome Enum**: `{summary.get('outcome', 'UNKNOWN')}`\n",
-        "## 16. Limitations and Human Recommendation",
-        f"- **Recommendation**: {summary.get('production_recommendation', 'Human review required')}",
-        f"- **Limitations**: {summary.get('limitations', [])}\n",
-        "## 17. RL Advisory and Learning Feedback",
-        f"- **Policy & Model Version**: `{learning.get('advisory', {}).get('policy', {}).get('policy_name', 'safe_disjoint_linucb')}` (`{learning.get('advisory', {}).get('policy', {}).get('model_version', 'cold-start')}`)",
-        f"- **Operating Mode**: `{learning.get('advisory', {}).get('policy', {}).get('operating_mode', 'SHADOW')}`",
-        f"- **Recommendation**: `{learning.get('advisory', {}).get('recommendation', 'ABSTAIN')}`",
-        f"- **Influence Allowed**: `{learning.get('advisory', {}).get('influence_allowed', False)}`",
-        f"- **Action Scores**: `{learning.get('advisory', {}).get('action_scores', {})}`",
-        f"- **Uncertainty**: `{learning.get('advisory', {}).get('uncertainty', 0.5)}`",
-        f"- **Sample Size**: `{learning.get('advisory', {}).get('sample_size', 0)}`",
-        f"- **Cold-Start Flag**: `{learning.get('advisory', {}).get('cold_start', True)}`",
-        f"- **Learning Eligibility**: `{learning.get('episode', {}).get('learning', {}).get('eligible', False)}`",
-        f"- **Reward**: `{learning.get('episode', {}).get('learning', {}).get('reward', None)}`",
-        f"- **Eligibility Reason**: `{learning.get('episode', {}).get('learning', {}).get('eligibility_reason', 'N/A')}`",
-        f"- **Feature Hash**: `{learning.get('advisory', {}).get('feature_hash', 'N/A')}`",
-        f"- **Episode ID**: `{learning.get('episode', {}).get('episode_id', 'N/A')}`\n"
-    ]
+        json.dumps(handoff.get("exact_envelope"), indent=2, ensure_ascii=False),
+        "```",
+        "",
+        "## RL Advisory",
+        f"- **Status**: `{rl.get('status', '')}`",
+        f"- **Operating Mode**: `{rl.get('operating_mode', '')}`",
+        f"- **Policy Version**: `{rl.get('policy_version', '')}`",
+        f"- **Model Version**: `{rl.get('model_version', '')}`",
+        f"- **Recommendation**: `{rl.get('recommendation', '')}`",
+        f"- **Allowed Actions**: `{rl.get('allowed_actions', [])}`",
+        f"- **Action Scores**: `{rl.get('action_scores', {})}`",
+        f"- **Uncertainty**: `{rl.get('uncertainty', 0.0)}`",
+        f"- **Sample Size**: `{rl.get('sample_size', 0)}`",
+        f"- **Cold Start**: `{rl.get('cold_start', True)}`",
+        f"- **Influence Allowed**: `{rl.get('influence_allowed', False)}`",
+        f"- **Reason Codes**: `{rl.get('reason_codes', [])}`",
+        f"- **Feature Hash**: `{rl.get('feature_hash', '')}`",
+        f"- **Latency (ms)**: `{rl.get('latency_ms', 0)}`",
+        ""
+    ])
+
+    # Phase 4 stages
+    lines.extend(_render_stage_section("Phase 4 Attestation", p4.get("attestation", {})))
+    lines.append("")
+    lines.extend(_render_stage_section("Before Observations", p4.get("before_observations", {})))
+    lines.append("")
+    lines.extend(_render_stage_section("Execution", p4.get("execution", {})))
+    lines.append("")
+    lines.extend(_render_stage_section("After Observations", p4.get("after_observations", {})))
+    lines.append("")
+    lines.extend(_render_stage_section("Verification", p4.get("verification", {})))
+    lines.append("")
+    lines.extend(_render_stage_section("Rollback", p4.get("rollback", {})))
+    lines.append("")
+    lines.extend(_render_stage_section("Cleanup", p4.get("cleanup", {})))
+    lines.append("")
+
+    lines.extend([
+        "## Learning",
+        f"- **Status**: `{learning.get('status', '')}`",
+        f"- **Episode ID**: `{learning.get('episode_id', '')}`",
+        f"- **Eligible**: `{learning.get('eligible', False)}`",
+        f"- **Eligibility Reason**: `{learning.get('eligibility_reason', '')}`",
+        f"- **Behavior Action**: `{learning.get('behavior_action', '')}`",
+        f"- **Reward**: `{learning.get('reward', None)}`",
+        f"- **Sample Weight**: `{learning.get('sample_weight', 0.0)}`",
+        f"- **Feature Hash**: `{learning.get('feature_hash', '')}`",
+        f"- **Stored**: `{learning.get('stored', False)}`",
+        "",
+        "## Integrity",
+        f"- **Report Schema Valid**: `{integrity.get('report_schema_valid', False)}`",
+        f"- **Input Hash**: `{integrity.get('input_hash', '')}`",
+        f"- **Payload Hash**: `{integrity.get('payload_hash', '')}`",
+        f"- **Event Log Hash**: `{integrity.get('event_log_hash', '')}`",
+        f"- **Report Hash**: `{integrity.get('report_hash', '')}`",
+        f"- **Errors**: `{integrity.get('errors', [])}`",
+    ])
+
     return "\n".join(lines)
 
 
-
-def generate_mvp_report(context: Dict[str, Any], reports_base_dir: Optional[str] = None) -> Tuple[str, str]:
+def generate_phase34_report(
+    context: dict,
+    reports_base_dir: str | None = None,
+) -> tuple[str, str]:
     """
-    Writes one JSON report and one Markdown report into:
-    reports/<incident_id>/<run_id>.json
-    reports/<incident_id>/<run_id>.md
-
-    Returns (json_path, md_path).
+    Public Canonical Phase 3+4 Report Producer.
+    Validates context against phase34_report_v1.schema.json, computes report hash,
+    renders Markdown, and atomically writes both JSON and Markdown.
     """
+    report = copy.deepcopy(context)
+
+    # Initialize integrity placeholders for schema validation
+    if "integrity" not in report or not isinstance(report["integrity"], dict):
+        report["integrity"] = {}
+    report["integrity"]["report_hash"] = "0" * 64
+    report["integrity"]["report_schema_valid"] = True
+    if not report["integrity"].get("event_log_hash"):
+        report["integrity"]["event_log_hash"] = EMPTY_EVENT_LOG_HASH
+
+    errors_list = report["integrity"].get("errors", [])
+    if "PHASE34_EVENT_LOG_NOT_EMITTED_PHASE3" not in errors_list:
+        errors_list.append("PHASE34_EVENT_LOG_NOT_EMITTED_PHASE3")
+    report["integrity"]["errors"] = errors_list
+
+    # Initial Schema Validation
+    schema = load_report_schema()
+    validator = Draft7Validator(schema, format_checker=get_format_checker())
+    validation_errors = sorted(validator.iter_errors(report), key=lambda e: (list(e.path), e.message))
+    if validation_errors:
+        err_msgs = [f"JSON Schema error at {e.json_path}: {e.message}" for e in validation_errors]
+        raise ReportContractError(f"Report contract validation failed: {err_msgs}")
+
+    # Compute actual report hash and update
+    actual_hash = compute_report_hash(report)
+    report["integrity"]["report_hash"] = actual_hash
+
+    # Final Schema Validation
+    final_errors = sorted(validator.iter_errors(report), key=lambda e: (list(e.path), e.message))
+    if final_errors:
+        err_msgs = [f"JSON Schema error at {e.json_path}: {e.message}" for e in final_errors]
+        raise ReportContractError(f"Final report contract validation failed: {err_msgs}")
+
+    # Render Markdown
+    md_content = _render_phase34_markdown(report)
+
+    # Output pathing
     base_dir = reports_base_dir or REPORTS_DIR
-    incident_id = context.get("incident_id", "case_unknown")
-    run_id = context.get("run_id", f"run_{int(datetime.now(timezone.utc).timestamp())}")
+    verification_run_id = report.get("run", {}).get("verification_run_id", "unknown_verify")
+    case_id = report.get("problem", {}).get("case_id", "unknown_case")
 
-    case_dir = os.path.join(base_dir, incident_id)
-    os.makedirs(case_dir, exist_ok=True)
+    dest_dir = os.path.join(base_dir, verification_run_id, "cases", case_id)
+    os.makedirs(dest_dir, exist_ok=True)
 
-    json_path = os.path.join(case_dir, f"{run_id}.json")
-    md_path = os.path.join(case_dir, f"{run_id}.md")
+    json_path = os.path.join(dest_dir, "phase34_report.json")
+    md_path = os.path.join(dest_dir, "phase34_report.md")
 
-    # Save JSON report
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(context, f, indent=2, ensure_ascii=False)
+    created_json = False
+    created_md = False
 
-    # Render and save Markdown report
-    md_content = render_markdown_report(context)
-    with open(md_path, "w", encoding="utf-8") as f:
-        f.write(md_content)
+    try:
+        # Atomic write of JSON
+        tmp_json = os.path.join(dest_dir, f".tmp_report_{os.getpid()}_{uuid.uuid4().hex}.json")
+        with open(tmp_json, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_json, json_path)
+        created_json = True
+
+        # Atomic write of Markdown
+        tmp_md = os.path.join(dest_dir, f".tmp_report_{os.getpid()}_{uuid.uuid4().hex}.md")
+        with open(tmp_md, "w", encoding="utf-8") as f:
+            f.write(md_content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_md, md_path)
+        created_md = True
+
+    except Exception as e:
+        # Clean up temporary files or incomplete pair
+        for tmp_f in [json_path if (created_json and not created_md) else None]:
+            if tmp_f and os.path.exists(tmp_f):
+                try:
+                    os.remove(tmp_f)
+                except Exception:
+                    pass
+        raise e
 
     return json_path, md_path
-
-
-def generate_report(outcome: Dict[str, Any], reports_dir: Optional[str] = None) -> str:
-    """Legacy compatibility wrapper for report_generator."""
-    incident_id = outcome.get("incident_id", "legacy_case")
-    now_utc = datetime.now(timezone.utc)
-    run_id = f"run_{now_utc.strftime('%Y%m%d_%H%M%S')}"
-
-    ctx = {
-        "report_version": "mvp-1.0",
-        "incident_id": incident_id,
-        "run_id": run_id,
-        "started_at": outcome.get("run_timestamp") or now_utc.isoformat(),
-        "completed_at": now_utc.isoformat(),
-        "problem": {
-            "raw_input": outcome.get("agent_proposal", {}),
-            "normalized_problem": outcome.get("message", "Legacy incident execution"),
-            "expected_behavior": "Shadow environment recovery"
-        },
-        "phase_3": {
-            "status": "COMPLETED",
-            "agents": {},
-            "orchestrator": {},
-            "confidence": {"score": outcome.get("confidence_score", 0.0), "reasoning": outcome.get("message", ""), "evidence_refs": []},
-            "selected_intent": outcome.get("agent_proposal", {}),
-            "duration_ms": 0
-        },
-        "phase_3_to_4_handoff": {
-            "exact_envelope": outcome.get("agent_proposal", {}),
-            "payload_hash": "legacy_hash",
-            "validation": {"passed": outcome.get("gate_decision") != "BLOCKED_SCHEMA", "errors": []}
-        },
-        "phase_4": {
-            "status": outcome.get("gate_decision", "UNKNOWN"),
-            "exact_input": outcome.get("agent_proposal", {}),
-            "target": outcome.get("agent_proposal", {}).get("target", {}),
-            "attestation": {},
-            "before_observations": outcome.get("before_state", {}),
-            "fault_setup": {},
-            "execution": {
-                "capability": outcome.get("agent_proposal", {}).get("intent_type", "unknown"),
-                "parameters": outcome.get("agent_proposal", {}).get("parameters", {}),
-                "result": outcome.get("execution_result", {}),
-                "duration_ms": 0
-            },
-            "after_observations": outcome.get("after_state", {}),
-            "verification": outcome.get("guardrail_result", {}),
-            "rollback": {"attempted": False, "result": None},
-            "cleanup": {},
-            "state_history": outcome.get("state_machine_history", []),
-            "duration_ms": 0
-        },
-        "final_summary": {
-            "outcome": outcome.get("gate_decision", "UNKNOWN"),
-            "problem_resolved_in_sandbox": outcome.get("fault_cleared", False),
-            "production_recommendation": outcome.get("message", "Human review required"),
-            "limitations": []
-        }
-    }
-
-    j_path, _ = generate_mvp_report(ctx, reports_base_dir=reports_dir or REPORTS_DIR)
-    return j_path

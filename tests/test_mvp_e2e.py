@@ -44,8 +44,9 @@ def test_e2e_three_docker_golden_cases():
 
         with open(res["json_report"], "r", encoding="utf-8") as f:
             data = json.load(f)
-            assert data["incident_id"] == res["incident_id"]
-            assert data["run_id"] == res["run_id"]
+            case_id = res.get("case_id") or res.get("incident_id")
+            assert data["problem"]["case_id"] == case_id
+            assert data["run"]["problem_run_id"] == res["problem_run_id"]
             assert data["final_summary"]["outcome"] in ["SANDBOX_VERIFIED", "SIMULATION_VERIFIED"]
 
             p4 = data.get("phase_4", {})
@@ -70,13 +71,14 @@ def test_e2e_all_22_cases(tmp_path):
 
         with open(res["json_report"], "r", encoding="utf-8") as f:
             j_data = json.load(f)
-            assert j_data["incident_id"] == res["incident_id"]
-            assert j_data["run_id"] == res["run_id"]
+            case_id = res.get("case_id") or res.get("incident_id")
+            assert j_data["problem"]["case_id"] == case_id
+            assert j_data["run"]["problem_run_id"] == res["problem_run_id"]
 
             # Phase 3 responses check
             p3 = j_data.get("phase_3", {})
             assert "agents" in p3
-            assert "orchestrator" in p3
+            assert "orchestrator_decision" in p3
 
             # Exact Phase 4 handoff input check
             handoff = j_data.get("phase_3_to_4_handoff", {})

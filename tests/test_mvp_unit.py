@@ -6,7 +6,7 @@ os.environ["DEBATE_MOCK_LLM"] = "1"
 from contracts.validation import validate_envelope, get_capabilities, is_mvp_supported
 from debate.action_publisher import build_action_proposed
 from shadow_sandbox.run_pipeline import run_phase4_pipeline
-from shadow_sandbox.reports.report_generator import generate_mvp_report
+from shadow_sandbox.reports.legacy_report_generator import generate_mvp_report
 
 
 def test_1_structured_phase3_intent_passes_validation():
