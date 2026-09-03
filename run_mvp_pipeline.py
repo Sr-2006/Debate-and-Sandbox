@@ -120,7 +120,7 @@ def _build_problem_section(case_id: str, problem_path: str, raw_problem: dict) -
 
 
 def _build_phase3_section(p3_res: dict, dm: DebateManager, sol: dict) -> dict:
-    p3_status = str(p3_res.get("phase3_status")) if "phase3_status" in p3_res else "UNAVAILABLE"
+    p3_status = str(p3_res.get("phase3_status")) if "phase3_status" in p3_res else "PHASE3_FAILED"
     scoring_meta = p3_res.get("scoring_meta", {})
 
     # Deterministic confidence score: null if missing/uncalculated
@@ -162,7 +162,7 @@ def _build_phase3_section(p3_res: dict, dm: DebateManager, sol: dict) -> dict:
 
     # Safety Veto & Safety Result
     safety_violated = bool(p3_res.get("safety_violation") or scoring_meta.get("veto_applied") or scoring_meta.get("safety_violation"))
-    safety_evaluated = bool(p3_res.get("safety_evaluated") or "safety_violation" in p3_res or "veto_applied" in scoring_meta)
+    safety_evaluated = bool(p3_res.get("safety_evaluated", False))
     veto_applied = safety_violated
     veto_cap = 0.64 if veto_applied else None
 
@@ -172,7 +172,7 @@ def _build_phase3_section(p3_res: dict, dm: DebateManager, sol: dict) -> dict:
             "veto_applied": True,
             "reason": scoring_meta.get("veto_reason", "Safety veto triggered")
         }
-    elif safety_evaluated or p3_status == "COMPLETED":
+    elif safety_evaluated:
         safety_dict = {"status": "PASS", "veto_applied": False}
     else:
         safety_dict = {"status": "UNAVAILABLE", "veto_applied": False}
@@ -197,7 +197,7 @@ def _build_phase3_section(p3_res: dict, dm: DebateManager, sol: dict) -> dict:
         if a_data and isinstance(a_data, dict):
             raw_resp = a_data.get("response", "")
             parsed_resp = dm.safe_parse_json(raw_resp) if isinstance(raw_resp, str) else raw_resp
-            valid_flag = bool(a_data.get("valid", True))
+            valid_flag = bool(a_data.get("valid", False))
             err_msg = a_data.get("error")
             status_str = "SUCCESS" if valid_flag and not err_msg else ("FAILED" if err_msg else "COMPLETED")
             latency_ms = max(0.0, float(a_data.get("latency", 0)) * 1000.0)
@@ -224,7 +224,7 @@ def _build_phase3_section(p3_res: dict, dm: DebateManager, sol: dict) -> dict:
             }
 
     selected_intent = sol.get("intent") if isinstance(sol.get("intent"), dict) else None
-    reason_codes = p3_res.get("reason_codes", ["UNAVAILABLE"] if p3_status != "COMPLETED" else ["DIAGNOSED"])
+    reason_codes = p3_res.get("reason_codes", ["UNAVAILABLE"] if p3_status != "COMPLETED" else [])
 
     return {
         "status": p3_status,
