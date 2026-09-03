@@ -1,0 +1,399 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Phase34ReportV1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "report_type",
+    "run",
+    "problem",
+    "phase_3",
+    "phase_3_to_4_handoff",
+    "rl_advisory",
+    "phase_4",
+    "learning",
+    "final_summary",
+    "integrity"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["phase34-report-v1"]
+    },
+    "report_type": {
+      "type": "string",
+      "enum": ["PHASE34_PROBLEM_SUMMARY"]
+    },
+    "run": {
+      "type": "object",
+      "required": [
+        "verification_run_id",
+        "problem_run_id",
+        "commit_sha",
+        "started_at",
+        "completed_at",
+        "duration_ms",
+        "execution_mode",
+        "mock_llm",
+        "rl_operating_mode",
+        "laptop1_transport"
+      ],
+      "properties": {
+        "verification_run_id": { "type": "string" },
+        "problem_run_id": { "type": "string" },
+        "commit_sha": { "type": "string" },
+        "started_at": { "type": "string" },
+        "completed_at": { "type": "string" },
+        "duration_ms": { "type": "number", "minimum": 0 },
+        "execution_mode": {
+          "type": "string",
+          "enum": ["SIMULATION", "REAL_SHADOW"]
+        },
+        "mock_llm": { "type": "boolean" },
+        "rl_operating_mode": { "type": "string" },
+        "laptop1_transport": { "type": ["string", "boolean", "object", "null"] }
+      }
+    },
+    "problem": {
+      "type": "object",
+      "required": [
+        "case_id",
+        "source_file",
+        "input_hash",
+        "raw_input",
+        "normalized_incident",
+        "severity",
+        "target",
+        "expected_behavior"
+      ],
+      "properties": {
+        "case_id": { "type": "string" },
+        "source_file": { "type": "string" },
+        "input_hash": { "type": "string" },
+        "raw_input": { "type": ["object", "null"] },
+        "normalized_incident": { "type": ["object", "null"] },
+        "severity": { "type": "string" },
+        "target": { "type": ["object", "string", "null"] },
+        "expected_behavior": { "type": "string" }
+      }
+    },
+    "phase_3": {
+      "type": "object",
+      "required": [
+        "status",
+        "started_at",
+        "completed_at",
+        "duration_ms",
+        "agents",
+        "agreement",
+        "confidence",
+        "safety",
+        "selected_intent",
+        "orchestrator_decision",
+        "reason_codes"
+      ],
+      "properties": {
+        "status": { "type": "string" },
+        "started_at": { "type": "string" },
+        "completed_at": { "type": "string" },
+        "duration_ms": { "type": "number", "minimum": 0 },
+        "agents": {
+          "type": "object",
+          "required": ["optimist", "critic", "fact_checker"],
+          "properties": {
+            "optimist": { "$ref": "#/definitions/agent_structure" },
+            "critic": { "$ref": "#/definitions/agent_structure" },
+            "fact_checker": { "$ref": "#/definitions/agent_structure" }
+          }
+        },
+        "agreement": { "type": ["number", "boolean", "string", "object", "null"] },
+        "confidence": {
+          "type": "object",
+          "required": [
+            "score",
+            "threshold",
+            "uncertainty",
+            "calibration_status",
+            "evidence_count",
+            "component_agreement",
+            "evidence_grounding",
+            "veto_applied",
+            "veto_cap",
+            "reason_codes"
+          ],
+          "properties": {
+            "score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "threshold": { "type": "number" },
+            "uncertainty": { "type": "number" },
+            "calibration_status": { "type": "string" },
+            "evidence_count": { "type": "integer", "minimum": 0 },
+            "component_agreement": { "type": "number" },
+            "evidence_grounding": { "type": "number" },
+            "veto_applied": { "type": "boolean" },
+            "veto_cap": { "type": ["number", "null"] },
+            "reason_codes": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        },
+        "safety": { "type": ["object", "string", "boolean", "null"] },
+        "selected_intent": { "type": ["object", "null"] },
+        "orchestrator_decision": { "type": ["string", "object"] },
+        "reason_codes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "phase_3_to_4_handoff": {
+      "type": "object",
+      "required": [
+        "status",
+        "schema_valid",
+        "validation_errors",
+        "payload_hash",
+        "exact_envelope",
+        "capability_mapped",
+        "mvp_supported",
+        "target_resolved"
+      ],
+      "properties": {
+        "status": { "type": "string" },
+        "schema_valid": { "type": "boolean" },
+        "validation_errors": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "payload_hash": { "type": "string" },
+        "exact_envelope": { "type": ["object", "null"] },
+        "capability_mapped": { "type": "boolean" },
+        "mvp_supported": { "type": "boolean" },
+        "target_resolved": { "type": "boolean" }
+      }
+    },
+    "rl_advisory": {
+      "type": "object",
+      "required": [
+        "status",
+        "operating_mode",
+        "policy_version",
+        "model_version",
+        "recommendation",
+        "allowed_actions",
+        "action_scores",
+        "uncertainty",
+        "sample_size",
+        "cold_start",
+        "influence_allowed",
+        "reason_codes",
+        "feature_hash",
+        "latency_ms"
+      ],
+      "properties": {
+        "status": { "type": "string" },
+        "operating_mode": { "type": "string" },
+        "policy_version": { "type": "string" },
+        "model_version": { "type": "string" },
+        "recommendation": { "type": "string" },
+        "allowed_actions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "action_scores": { "type": "object" },
+        "uncertainty": { "type": "number" },
+        "sample_size": { "type": "integer", "minimum": 0 },
+        "cold_start": { "type": "boolean" },
+        "influence_allowed": { "type": "boolean" },
+        "reason_codes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "feature_hash": { "type": "string" },
+        "latency_ms": { "type": "number", "minimum": 0 }
+      }
+    },
+    "phase_4": {
+      "type": "object",
+      "required": [
+        "status",
+        "started_at",
+        "completed_at",
+        "duration_ms",
+        "exact_input",
+        "target",
+        "attestation",
+        "before_observations",
+        "fault_setup",
+        "execution",
+        "after_observations",
+        "verification",
+        "rollback",
+        "cleanup",
+        "state_history",
+        "reason_codes"
+      ],
+      "properties": {
+        "status": { "type": "string" },
+        "started_at": { "type": "string" },
+        "completed_at": { "type": "string" },
+        "duration_ms": { "type": "number", "minimum": 0 },
+        "exact_input": { "type": ["object", "null"] },
+        "target": { "type": ["object", "string", "null"] },
+        "attestation": {
+          "type": "object",
+          "required": [
+            "status",
+            "attempted",
+            "attested",
+            "target",
+            "environment",
+            "reason_code",
+            "reason"
+          ],
+          "properties": {
+            "status": { "type": "string" },
+            "attempted": { "type": "boolean" },
+            "attested": { "type": "boolean" },
+            "target": { "type": ["object", "string", "null"] },
+            "environment": { "type": "string" },
+            "reason_code": { "type": "string" },
+            "reason": { "type": "string" }
+          }
+        },
+        "before_observations": { "type": ["array", "object", "null"] },
+        "fault_setup": { "type": ["object", "null"] },
+        "execution": {
+          "type": "object",
+          "required": [
+            "status",
+            "attempted",
+            "capability",
+            "mode",
+            "parameters",
+            "result",
+            "duration_ms"
+          ],
+          "properties": {
+            "status": { "type": "string" },
+            "attempted": { "type": "boolean" },
+            "capability": { "type": "string" },
+            "mode": { "type": "string" },
+            "parameters": { "type": "object" },
+            "result": { "type": ["object", "string", "null"] },
+            "duration_ms": { "type": "number", "minimum": 0 }
+          }
+        },
+        "after_observations": { "type": ["array", "object", "null"] },
+        "verification": { "type": ["object", "null"] },
+        "rollback": { "type": ["object", "null"] },
+        "cleanup": { "type": ["object", "null"] },
+        "state_history": { "type": "array" },
+        "reason_codes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "learning": {
+      "type": "object",
+      "required": [
+        "status",
+        "episode_id",
+        "eligible",
+        "eligibility_reason",
+        "behavior_action",
+        "reward",
+        "sample_weight",
+        "feature_hash",
+        "stored"
+      ],
+      "properties": {
+        "status": { "type": "string" },
+        "episode_id": { "type": "string" },
+        "eligible": { "type": "boolean" },
+        "eligibility_reason": { "type": "string" },
+        "behavior_action": { "type": "string" },
+        "reward": { "type": ["number", "null"] },
+        "sample_weight": { "type": "number" },
+        "feature_hash": { "type": "string" },
+        "stored": { "type": "boolean" }
+      }
+    },
+    "final_summary": {
+      "type": "object",
+      "required": [
+        "outcome",
+        "problem_resolved_in_sandbox",
+        "execution_performed",
+        "human_intervention_required",
+        "recommended_next_action",
+        "what_happened",
+        "why_it_happened",
+        "safety_result",
+        "confidence_result",
+        "limitations"
+      ],
+      "properties": {
+        "outcome": { "type": "string" },
+        "problem_resolved_in_sandbox": { "type": "boolean" },
+        "execution_performed": { "type": "boolean" },
+        "human_intervention_required": { "type": "boolean" },
+        "recommended_next_action": { "type": "string" },
+        "what_happened": { "type": "string" },
+        "why_it_happened": { "type": "string" },
+        "safety_result": { "type": "string" },
+        "confidence_result": { "type": "string" },
+        "limitations": { "type": ["array", "string"], "items": { "type": "string" } }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "required": [
+        "report_schema_valid",
+        "input_hash",
+        "payload_hash",
+        "event_log_hash",
+        "report_hash",
+        "errors"
+      ],
+      "properties": {
+        "report_schema_valid": { "type": "boolean" },
+        "input_hash": { "type": "string" },
+        "payload_hash": { "type": "string" },
+        "event_log_hash": { "type": "string" },
+        "report_hash": { "type": "string" },
+        "errors": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "agent_structure": {
+      "type": "object",
+      "required": [
+        "name",
+        "status",
+        "prompt",
+        "raw_response",
+        "parsed_response",
+        "valid",
+        "latency_ms",
+        "error"
+      ],
+      "properties": {
+        "name": { "type": "string" },
+        "status": { "type": "string" },
+        "prompt": { "type": "string" },
+        "raw_response": { "type": "string" },
+        "parsed_response": { "type": ["object", "array", "string", "null"] },
+        "valid": { "type": "boolean" },
+        "latency_ms": { "type": "number", "minimum": 0 },
+        "error": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
