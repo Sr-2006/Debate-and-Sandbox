@@ -298,7 +298,7 @@ def generate_phase34_report(
     """
     Public Canonical Phase 3+4 Report Producer.
     Validates context against phase34_report_v1.schema.json, computes report hash,
-    renders Markdown, and atomically writes both JSON and Markdown.
+    renders Markdown, and atomically writes both JSON and Markdown as a safe pair.
     """
     report = copy.deepcopy(context)
 
@@ -333,7 +333,7 @@ def generate_phase34_report(
         err_msgs = [f"JSON Schema error at {e.json_path}: {e.message}" for e in final_errors]
         raise ReportContractError(f"Final report contract validation failed: {err_msgs}")
 
-    # Render Markdown
+    # Render Markdown payload BEFORE touching file system
     md_content = _render_phase34_markdown(report)
 
     # Output pathing
@@ -344,39 +344,106 @@ def generate_phase34_report(
     dest_dir = os.path.join(base_dir, verification_run_id, "cases", case_id)
     os.makedirs(dest_dir, exist_ok=True)
 
-    json_path = os.path.join(dest_dir, "phase34_report.json")
-    md_path = os.path.join(dest_dir, "phase34_report.md")
+    dest_json = os.path.join(dest_dir, "phase34_report.json")
+    dest_md = os.path.join(dest_dir, "phase34_report.md")
 
-    created_json = False
-    created_md = False
+    pid_str = f"{os.getpid()}_{uuid.uuid4().hex}"
+    tmp_json = os.path.join(dest_dir, f".phase34_report.json.tmp.{pid_str}")
+    tmp_md = os.path.join(dest_dir, f".phase34_report.md.tmp.{pid_str}")
+    bak_json = os.path.join(dest_dir, f".phase34_report.json.bak.{pid_str}")
+    bak_md = os.path.join(dest_dir, f".phase34_report.md.bak.{pid_str}")
 
+    # Step 1: Write both temporary files first with flush & fsync
     try:
-        # Atomic write of JSON
-        tmp_json = os.path.join(dest_dir, f".tmp_report_{os.getpid()}_{uuid.uuid4().hex}.json")
         with open(tmp_json, "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp_json, json_path)
-        created_json = True
 
-        # Atomic write of Markdown
-        tmp_md = os.path.join(dest_dir, f".tmp_report_{os.getpid()}_{uuid.uuid4().hex}.md")
         with open(tmp_md, "w", encoding="utf-8") as f:
             f.write(md_content)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp_md, md_path)
-        created_md = True
-
-    except Exception as e:
-        # Clean up temporary files or incomplete pair
-        for tmp_f in [json_path if (created_json and not created_md) else None]:
-            if tmp_f and os.path.exists(tmp_f):
+    except Exception as write_err:
+        for t_file in [tmp_json, tmp_md]:
+            if os.path.exists(t_file):
                 try:
-                    os.remove(tmp_f)
+                    os.remove(t_file)
                 except Exception:
                     pass
-        raise e
+        raise write_err
 
-    return json_path, md_path
+    # Step 2: Backup existing files if present
+    backed_up_json = False
+    backed_up_md = False
+    try:
+        if os.path.exists(dest_json):
+            os.replace(dest_json, bak_json)
+            backed_up_json = True
+        if os.path.exists(dest_md):
+            os.replace(dest_md, bak_md)
+            backed_up_md = True
+    except Exception as bak_err:
+        if backed_up_json and os.path.exists(bak_json):
+            try:
+                os.replace(bak_json, dest_json)
+            except Exception:
+                pass
+        for t_file in [tmp_json, tmp_md]:
+            if os.path.exists(t_file):
+                try:
+                    os.remove(t_file)
+                except Exception:
+                    pass
+        raise bak_err
+
+    # Step 3: Replace destination files atomically as a pair
+    replaced_json = False
+    replaced_md = False
+    try:
+        os.replace(tmp_json, dest_json)
+        replaced_json = True
+        os.replace(tmp_md, dest_md)
+        replaced_md = True
+    except Exception as replace_err:
+        # Roll back replacements and restore original pair
+        if replaced_json and os.path.exists(dest_json):
+            try:
+                os.remove(dest_json)
+            except Exception:
+                pass
+        if replaced_md and os.path.exists(dest_md):
+            try:
+                os.remove(dest_md)
+            except Exception:
+                pass
+
+        if backed_up_json and os.path.exists(bak_json):
+            try:
+                os.replace(bak_json, dest_json)
+            except Exception:
+                pass
+        if backed_up_md and os.path.exists(bak_md):
+            try:
+                os.replace(bak_md, dest_md)
+            except Exception:
+                pass
+
+        for t_file in [tmp_json, tmp_md]:
+            if os.path.exists(t_file):
+                try:
+                    os.remove(t_file)
+                except Exception:
+                    pass
+
+        raise replace_err
+
+    # Step 4: Cleanup backups after successful replacement
+    for b_file in [bak_json, bak_md]:
+        if os.path.exists(b_file):
+            try:
+                os.remove(b_file)
+            except Exception:
+                pass
+
+    return dest_json, dest_md

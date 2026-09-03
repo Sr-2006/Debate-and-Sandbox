@@ -204,7 +204,7 @@ def valid_report_context():
             "problem_resolved_in_sandbox": False,
             "execution_performed": True,
             "human_intervention_required": False,
-            "recommended_next_action": "NO_ACTION_REQUIRED",
+            "recommended_next_action": "RUN_REAL_SHADOW_VALIDATION",
             "what_happened": "Remediation verified in simulation mode.",
             "why_it_happened": "Container restart succeeded.",
             "safety_result": "PASS",

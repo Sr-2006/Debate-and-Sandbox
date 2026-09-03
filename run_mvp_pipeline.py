@@ -39,7 +39,7 @@ if arse_dir not in sys.path:
 from debate.debate_manager import DebateManager
 from debate.action_publisher import build_action_proposed
 from contracts.canonical_json import compute_payload_hash
-from contracts.validation import validate_envelope, is_mvp_supported
+from contracts.validation import validate_envelope, is_mvp_supported, get_capabilities
 from shadow_sandbox.run_pipeline import run_phase4_pipeline
 from shadow_sandbox.reports.report_generator import generate_phase34_report, EMPTY_EVENT_LOG_HASH
 from rl_engine.advisor import RLAdvisor
@@ -119,13 +119,69 @@ def _build_problem_section(case_id: str, problem_path: str, raw_problem: dict) -
 
 
 def _build_phase3_section(p3_res: dict, dm: DebateManager, sol: dict) -> dict:
-    p3_status = p3_res.get("phase3_status", "COMPLETED")
+    p3_status = str(p3_res.get("phase3_status", "COMPLETED"))
+    scoring_meta = p3_res.get("scoring_meta", {})
+
+    # Preserve exact deterministic confidence score
     conf_raw = p3_res.get("confidence_score")
     if conf_raw is not None and isinstance(conf_raw, (int, float)):
         conf_score = float(conf_raw) / 100.0 if float(conf_raw) > 1.0 else float(conf_raw)
+    elif "confidence" in sol and isinstance(sol.get("confidence"), (int, float)):
+        c_val = float(sol.get("confidence"))
+        conf_score = c_val if c_val <= 1.0 else c_val / 100.0
     else:
         conf_score = 0.0
+    conf_score = max(0.0, min(1.0, conf_score))
 
+    # Threshold: exact threshold from engine / config, or null if unsupplied
+    threshold_raw = p3_res.get("confidence_threshold") or scoring_meta.get("threshold") or 0.80
+    threshold_val = max(0.0, min(1.0, float(threshold_raw)))
+
+    # Agreement: null if unsupplied, do not default to 1.0
+    agreement_raw = p3_res.get("agreement") if "agreement" in p3_res else scoring_meta.get("component_agreement")
+    if agreement_raw is not None:
+        try:
+            agreement_val = max(0.0, min(1.0, float(agreement_raw)))
+        except (ValueError, TypeError):
+            agreement_val = None
+    else:
+        agreement_val = None
+
+    # Evidence grounding: actual grounding score, not confidence score
+    grounding_raw = scoring_meta.get("evidence_grounding")
+    if grounding_raw is not None:
+        try:
+            evidence_grounding_val = max(0.0, min(1.0, float(grounding_raw)))
+        except (ValueError, TypeError):
+            evidence_grounding_val = 0.0
+    else:
+        evidence_grounding_val = 0.0
+
+    # Safety Veto & Safety Result
+    safety_violated = bool(p3_res.get("safety_violation") or scoring_meta.get("veto_applied") or scoring_meta.get("safety_violation"))
+    veto_applied = safety_violated
+    veto_cap = 0.64 if veto_applied else None
+
+    if safety_violated:
+        safety_dict = {
+            "status": "SAFETY_VIOLATION",
+            "veto_applied": True,
+            "reason": scoring_meta.get("veto_reason", "Safety veto triggered")
+        }
+    elif p3_status == "COMPLETED":
+        safety_dict = {"status": "PASS", "veto_applied": False}
+    else:
+        safety_dict = {"status": "UNAVAILABLE", "veto_applied": False}
+
+    # Orchestrator Decision
+    if safety_violated:
+        orch_decision_val = "REJECT_SAFETY_VETO"
+    elif p3_status == "PHASE3_FAILED":
+        orch_decision_val = "REJECT_PHASE3_FAILED"
+    else:
+        orch_decision_val = p3_res.get("orchestrator_decision") or p3_res.get("execution_tier") or "TIER_1_AUTONOMOUS_EXECUTION"
+
+    # Agents formatting
     p3_agents = p3_res.get("r1_detailed", {})
     agents_dict = {}
     for agent_name in ["optimist", "critic", "fact_checker"]:
@@ -159,47 +215,31 @@ def _build_phase3_section(p3_res: dict, dm: DebateManager, sol: dict) -> dict:
                 "error": None
             }
 
-    agreement_val = p3_res.get("agreement")
-    if agreement_val is not None:
-        try:
-            agreement_float = float(agreement_val)
-            agreement_float = max(0.0, min(1.0, agreement_float))
-        except (ValueError, TypeError):
-            agreement_float = 1.0 if p3_status == "COMPLETED" else 0.0
-    else:
-        agreement_float = 1.0 if p3_status == "COMPLETED" else 0.0
-
-    selected_intent = sol.get("intent")
-    if not isinstance(selected_intent, dict):
-        selected_intent = None
-
-    orch_decision = p3_res.get("orchestrator_decision", "APPROVE" if p3_status == "COMPLETED" else "REJECT")
-    orch_str = json.dumps(orch_decision) if isinstance(orch_decision, dict) else str(orch_decision)
-
+    selected_intent = sol.get("intent") if isinstance(sol.get("intent"), dict) else None
     reason_codes = p3_res.get("reason_codes", ["DIAGNOSED"] if p3_status == "COMPLETED" else ["PHASE3_FAILED"])
 
     return {
-        "status": str(p3_status),
+        "status": p3_status,
         "started_at": p3_res.get("started_at") or datetime.now(timezone.utc).isoformat(),
         "completed_at": p3_res.get("completed_at") or datetime.now(timezone.utc).isoformat(),
         "duration_ms": max(0.0, float(p3_res.get("total_latency_seconds", 0)) * 1000.0),
         "agents": agents_dict,
-        "agreement": agreement_float,
+        "agreement": agreement_val,
         "confidence": {
-            "score": max(0.0, min(1.0, conf_score)),
-            "threshold": 0.80,
-            "uncertainty": round(max(0.0, min(1.0, 1.0 - max(0.0, min(1.0, conf_score)))), 2),
+            "score": conf_score,
+            "threshold": threshold_val,
+            "uncertainty": round(max(0.0, min(1.0, 1.0 - conf_score)), 2),
             "calibration_status": "CALIBRATED" if conf_score > 0 else "UNCALIBRATED",
             "evidence_count": len(sol.get("evidence_refs", [])),
-            "component_agreement": agreement_float,
-            "evidence_grounding": max(0.0, min(1.0, conf_score)),
-            "veto_applied": False,
-            "veto_cap": None,
+            "component_agreement": agreement_val if agreement_val is not None else 0.0,
+            "evidence_grounding": evidence_grounding_val,
+            "veto_applied": veto_applied,
+            "veto_cap": veto_cap,
             "reason_codes": reason_codes
         },
-        "safety": {"status": "PASS"} if p3_status == "COMPLETED" else {"status": "FAILED"},
+        "safety": safety_dict,
         "selected_intent": selected_intent,
-        "orchestrator_decision": orch_str,
+        "orchestrator_decision": str(orch_decision_val),
         "reason_codes": reason_codes
     }
 
@@ -210,15 +250,17 @@ def _build_handoff_section(envelope: dict, is_valid: bool, errs: list) -> dict:
     first_intent = intents[0] if intents else {}
     intent_type = first_intent.get("intent_type", "NO_SUPPORTED_ACTION")
 
-    cap_mapped = is_valid and intent_type != "NO_SUPPORTED_ACTION"
+    capabilities_catalog = get_capabilities()
+    cap_mapped = bool(intent_type in capabilities_catalog)
+    mvp_supp = is_mvp_supported(intent_type)
+
     target_ref = first_intent.get("target_ref") or envelope.get("target_ref") or {}
     canonical_target = target_ref.get("canonical_name", "")
     target_res = bool(canonical_target and str(canonical_target).lower() not in ["n/a", "unknown", "none", ""])
-    mvp_supp = cap_mapped and is_mvp_supported(intent_type)
 
     return {
         "status": "SUCCESS" if is_valid else "HANDOFF_FAILED",
-        "schema_valid": is_valid,
+        "schema_valid": bool(is_valid),
         "validation_errors": [str(e) for e in errs],
         "payload_hash": str(payload_hash),
         "exact_envelope": envelope,
@@ -228,153 +270,485 @@ def _build_handoff_section(envelope: dict, is_valid: bool, errs: list) -> dict:
     }
 
 
-def _build_rl_advisory_section(rl_advisory_obj) -> dict:
-    d = rl_advisory_obj.to_dict()
+def _build_rl_advisory_section(rl_advisory_obj: Any) -> dict:
+    if not rl_advisory_obj:
+        return {
+            "status": "UNAVAILABLE",
+            "operating_mode": "DISABLED",
+            "policy_version": "",
+            "model_version": "",
+            "recommendation": "ABSTAIN",
+            "allowed_actions": [],
+            "action_scores": {},
+            "uncertainty": 0.0,
+            "sample_size": 0,
+            "cold_start": True,
+            "influence_allowed": False,
+            "reason_codes": ["RL_ADVISOR_UNAVAILABLE"],
+            "feature_hash": "",
+            "latency_ms": 0.0
+        }
+
+    d = rl_advisory_obj.to_dict() if hasattr(rl_advisory_obj, "to_dict") else rl_advisory_obj
+    rec = str(d.get("recommendation") or "ABSTAIN")
+    stat = "SUCCESS" if rec != "ABSTAIN" and d.get("recommendation") else "UNAVAILABLE"
+
     return {
-        "status": "SUCCESS" if d.get("recommendation") else "UNAVAILABLE",
-        "operating_mode": d.get("policy", {}).get("operating_mode", "SHADOW"),
-        "policy_version": str(d.get("policy", {}).get("policy_name", "safe_disjoint_linucb")),
-        "model_version": str(d.get("policy", {}).get("model_version", "v1.0")),
-        "recommendation": str(d.get("recommendation", "ABSTAIN")),
-        "allowed_actions": d.get("allowed_actions", ["ACCEPT_PROPOSAL"]),
+        "status": stat,
+        "operating_mode": str(d.get("policy", {}).get("operating_mode", d.get("operating_mode", "SHADOW"))),
+        "policy_version": str(d.get("policy", {}).get("policy_name", d.get("policy_version", ""))),
+        "model_version": str(d.get("policy", {}).get("model_version", d.get("model_version", ""))),
+        "recommendation": rec if rec in ["ACCEPT_PROPOSAL", "OBSERVE_FIRST", "REQUIRE_HUMAN_REVIEW", "ABSTAIN"] else "ABSTAIN",
+        "allowed_actions": d.get("allowed_actions", []),
         "action_scores": d.get("action_scores", {}),
-        "uncertainty": max(0.0, min(1.0, float(d.get("uncertainty", 0.1)))),
+        "uncertainty": max(0.0, min(1.0, float(d.get("uncertainty", 0.0)))),
         "sample_size": max(0, int(d.get("sample_size", 0))),
         "cold_start": bool(d.get("cold_start", True)),
         "influence_allowed": False,
         "reason_codes": d.get("reason_codes", []),
-        "feature_hash": str(d.get("feature_hash", "feat_hash_unknown")),
+        "feature_hash": str(d.get("feature_hash", "")),
         "latency_ms": max(0.0, float(d.get("latency_ms", 0.0)))
     }
 
 
-def _normalize_stage(stage_dict: Any, default_reason: str = "Stage was not reached") -> dict:
-    if not isinstance(stage_dict, dict) or not stage_dict:
+def _build_stage_attestation(att: Any) -> dict:
+    if not isinstance(att, dict) or not att:
         return {
             "status": "NOT_RUN",
             "attempted": False,
             "reason_code": "NOT_RUN",
-            "reason": default_reason,
+            "reason": "Target attestation was not run",
             "data": {},
             "duration_ms": 0
         }
-    status = stage_dict.get("status", "COMPLETED")
-    attempted = stage_dict.get("attempted", True)
-    reason_code = stage_dict.get("reason_code", "DIAGNOSED")
-    reason = stage_dict.get("reason", "Stage completed")
-    duration_ms = stage_dict.get("duration_ms", 0)
-    data = stage_dict.get("data")
-    if data is None:
-        data = {k: v for k, v in stage_dict.items() if k not in ["status", "attempted", "reason_code", "reason", "duration_ms"]}
+    attested = att.get("attested")
+    attempted = bool(att.get("attempted", attested is not None))
+    if attested is True:
+        status = "PASSED"
+        reason_code = str(att.get("reason_code") or "PASSED")
+        reason = str(att.get("reason") or "Attestation verified")
+    elif attested is False:
+        status = "FAILED"
+        reason_code = str(att.get("reason_code") or "ATTESTATION_FAILED")
+        reason = str(att.get("reason") or "Attestation check failed")
+    else:
+        status = str(att.get("status", "NOT_RUN" if not attempted else "UNKNOWN"))
+        reason_code = str(att.get("reason_code", "NOT_RUN"))
+        reason = str(att.get("reason", "Attestation status unknown"))
+
+    data = att.get("data") if isinstance(att.get("data"), (dict, list)) else {
+        k: v for k, v in att.items() if k not in ["status", "attempted", "reason_code", "reason", "duration_ms", "attested"]
+    }
     return {
-        "status": str(status),
-        "attempted": bool(attempted),
-        "reason_code": str(reason_code),
-        "reason": str(reason),
-        "data": data if isinstance(data, (dict, list)) else {"val": str(data)},
-        "duration_ms": max(0.0, float(duration_ms)) if isinstance(duration_ms, (int, float)) else 0
+        "status": status,
+        "attempted": attempted,
+        "reason_code": reason_code,
+        "reason": reason,
+        "data": data,
+        "duration_ms": max(0.0, float(att.get("duration_ms", 0)))
+    }
+
+
+def _build_stage_before_observations(obs: Any) -> dict:
+    if not isinstance(obs, dict) or not obs:
+        return {
+            "status": "NOT_RUN",
+            "attempted": False,
+            "reason_code": "NOT_RUN",
+            "reason": "Before observation was not run",
+            "data": {},
+            "duration_ms": 0
+        }
+    attempted = bool(obs.get("attempted", bool(obs.get("data") or obs.get("status"))))
+    status = str(obs.get("status", "COMPLETED" if attempted else "NOT_RUN"))
+    reason_code = str(obs.get("reason_code", "OBSERVED" if attempted else "NOT_RUN"))
+    reason = str(obs.get("reason", "Before state recorded" if attempted else "Not run"))
+    data = obs.get("data") if isinstance(obs.get("data"), (dict, list)) else {
+        k: v for k, v in obs.items() if k not in ["status", "attempted", "reason_code", "reason", "duration_ms"]
+    }
+    return {
+        "status": status,
+        "attempted": attempted,
+        "reason_code": reason_code,
+        "reason": reason,
+        "data": data,
+        "duration_ms": max(0.0, float(obs.get("duration_ms", 0)))
+    }
+
+
+def _build_stage_fault_setup(fault: Any) -> dict:
+    if not isinstance(fault, dict) or not fault:
+        return {
+            "status": "NOT_RUN",
+            "attempted": False,
+            "reason_code": "NOT_RUN",
+            "reason": "No fault setup executed",
+            "data": {},
+            "duration_ms": 0
+        }
+    injected = fault.get("injected")
+    attempted = bool(fault.get("attempted", injected is not None or bool(fault.get("data"))))
+    status = str(fault.get("status", "COMPLETED" if (attempted and injected) else "NOT_RUN"))
+    reason_code = str(fault.get("reason_code", "FAULT_INJECTED" if injected else "NOT_RUN"))
+    reason = str(fault.get("reason", "Fault setup completed" if attempted else "No fault setup"))
+    data = fault.get("data") if isinstance(fault.get("data"), (dict, list)) else {
+        k: v for k, v in fault.items() if k not in ["status", "attempted", "reason_code", "reason", "duration_ms"]
+    }
+    return {
+        "status": status,
+        "attempted": attempted,
+        "reason_code": reason_code,
+        "reason": reason,
+        "data": data,
+        "duration_ms": max(0.0, float(fault.get("duration_ms", 0)))
+    }
+
+
+def _build_stage_execution(exec_dict: Any) -> dict:
+    if not isinstance(exec_dict, dict) or not exec_dict:
+        return {
+            "status": "NOT_RUN",
+            "attempted": False,
+            "capability": "NOT_RUN",
+            "mode": "OBSERVE",
+            "parameters": {},
+            "result": None,
+            "duration_ms": 0
+        }
+    attempted = bool(exec_dict.get("attempted", False))
+    result = exec_dict.get("result")
+    cap = str(exec_dict.get("capability", "unknown"))
+    mode = str(exec_dict.get("mode", "OBSERVE"))
+    params = exec_dict.get("parameters") if isinstance(exec_dict.get("parameters"), dict) else {}
+    duration_ms = max(0.0, float(exec_dict.get("duration_ms", 0)))
+
+    if not attempted:
+        status = str(exec_dict.get("status", "NOT_RUN"))
+    else:
+        if isinstance(result, dict) and result.get("success") is False:
+            status = "FAILED"
+        else:
+            status = str(exec_dict.get("status", "SUCCESS"))
+
+    return {
+        "status": status,
+        "attempted": attempted,
+        "capability": cap,
+        "mode": mode,
+        "parameters": params,
+        "result": result if isinstance(result, (dict, str)) or result is None else {"val": str(result)},
+        "duration_ms": duration_ms
+    }
+
+
+def _build_stage_after_observations(obs: Any) -> dict:
+    if not isinstance(obs, dict) or not obs:
+        return {
+            "status": "NOT_RUN",
+            "attempted": False,
+            "reason_code": "NOT_RUN",
+            "reason": "After observation was not run",
+            "data": {},
+            "duration_ms": 0
+        }
+    attempted = bool(obs.get("attempted", bool(obs.get("data") or obs.get("status"))))
+    status = str(obs.get("status", "COMPLETED" if attempted else "NOT_RUN"))
+    reason_code = str(obs.get("reason_code", "OBSERVED" if attempted else "NOT_RUN"))
+    reason = str(obs.get("reason", "After state recorded" if attempted else "Not run"))
+    data = obs.get("data") if isinstance(obs.get("data"), (dict, list)) else {
+        k: v for k, v in obs.items() if k not in ["status", "attempted", "reason_code", "reason", "duration_ms"]
+    }
+    return {
+        "status": status,
+        "attempted": attempted,
+        "reason_code": reason_code,
+        "reason": reason,
+        "data": data,
+        "duration_ms": max(0.0, float(obs.get("duration_ms", 0)))
+    }
+
+
+def _build_stage_verification(ver: Any) -> dict:
+    if not isinstance(ver, dict) or not ver:
+        return {
+            "status": "NOT_RUN",
+            "attempted": False,
+            "reason_code": "NOT_RUN",
+            "reason": "Verification was not run",
+            "data": {},
+            "duration_ms": 0
+        }
+    passed = ver.get("passed")
+    attempted = bool(ver.get("attempted", passed is not None or ver.get("status") is not None))
+    if passed is True:
+        status = "PASSED"
+        reason_code = str(ver.get("reason_code") or "VERIFIED_RECOVERED")
+        reason = str(ver.get("reason") or "Verification passed")
+    elif passed is False:
+        status = "FAILED"
+        reason_code = str(ver.get("reason_code") or "VERIFICATION_FAILED")
+        reason = str(ver.get("reason") or "Verification failed")
+    else:
+        status = str(ver.get("status", "NOT_RUN" if not attempted else "UNKNOWN"))
+        reason_code = str(ver.get("reason_code", "NOT_RUN"))
+        reason = str(ver.get("reason", "Verification not run"))
+
+    data = ver.get("data") if isinstance(ver.get("data"), (dict, list)) else {
+        k: v for k, v in ver.items() if k not in ["status", "attempted", "reason_code", "reason", "duration_ms", "passed"]
+    }
+    return {
+        "status": status,
+        "attempted": attempted,
+        "reason_code": reason_code,
+        "reason": reason,
+        "data": data,
+        "duration_ms": max(0.0, float(ver.get("duration_ms", 0)))
+    }
+
+
+def _build_stage_rollback(rb: Any) -> dict:
+    if not isinstance(rb, dict) or not rb:
+        return {
+            "status": "NOT_RUN",
+            "attempted": False,
+            "reason_code": "NOT_RUN",
+            "reason": "No rollback attempted",
+            "data": {},
+            "duration_ms": 0
+        }
+    attempted = bool(rb.get("attempted", False))
+    rb_res = rb.get("result")
+    success = (rb_res == "SUCCESS") or (isinstance(rb_res, dict) and rb_res.get("success") is True) or (rb.get("success") is True)
+
+    if not attempted:
+        status = "NOT_RUN"
+        reason_code = "NOT_RUN"
+        reason = "No rollback attempted"
+    elif success:
+        status = "SUCCESS"
+        reason_code = str(rb.get("reason_code") or "ROLLED_BACK")
+        reason = str(rb.get("reason") or "Rollback succeeded")
+    else:
+        status = "FAILED"
+        reason_code = str(rb.get("reason_code") or "ROLLBACK_FAILED")
+        reason = str(rb.get("reason") or "Rollback failed")
+
+    data = rb.get("data") if isinstance(rb.get("data"), (dict, list)) else {
+        k: v for k, v in rb.items() if k not in ["status", "attempted", "reason_code", "reason", "duration_ms", "result"]
+    }
+    return {
+        "status": status,
+        "attempted": attempted,
+        "reason_code": reason_code,
+        "reason": reason,
+        "data": data,
+        "duration_ms": max(0.0, float(rb.get("duration_ms", 0)))
+    }
+
+
+def _build_stage_cleanup(clean: Any) -> dict:
+    if not isinstance(clean, dict) or not clean:
+        return {
+            "status": "NOT_RUN",
+            "attempted": False,
+            "reason_code": "NOT_RUN",
+            "reason": "Cleanup not run",
+            "data": {},
+            "duration_ms": 0
+        }
+    completed = clean.get("completed", True)
+    attempted = bool(clean.get("attempted", True))
+    status = "COMPLETED" if (attempted and completed) else str(clean.get("status", "NOT_RUN"))
+    reason_code = str(clean.get("reason_code", "CLEANED_UP" if status == "COMPLETED" else "NOT_RUN"))
+    reason = str(clean.get("reason", "Cleanup finished" if status == "COMPLETED" else "Cleanup incomplete"))
+    data = clean.get("data") if isinstance(clean.get("data"), (dict, list)) else {
+        k: v for k, v in clean.items() if k not in ["status", "attempted", "reason_code", "reason", "duration_ms", "completed"]
+    }
+    return {
+        "status": status,
+        "attempted": attempted,
+        "reason_code": reason_code,
+        "reason": reason,
+        "data": data,
+        "duration_ms": max(0.0, float(clean.get("duration_ms", 0)))
     }
 
 
 def _build_phase4_section(p4_res: dict) -> dict:
-    status = p4_res.get("status", "NOT_RUN")
-    exact_input = p4_res.get("exact_input")
+    status = str(p4_res.get("status", "NOT_RUN"))
+    exact_input = p4_res.get("exact_input") if isinstance(p4_res.get("exact_input"), dict) else None
     target = p4_res.get("target")
 
-    exec_dict = p4_res.get("execution", {})
-    if isinstance(exec_dict, dict):
-        exec_status = exec_dict.get("status", status if status != "NOT_RUN" else "NOT_RUN")
-        exec_attempted = bool(exec_dict.get("attempted", status in ["SANDBOX_VERIFIED", "SIMULATION_VERIFIED", "SANDBOX_FAILED_ROLLED_BACK", "SANDBOX_FAILED_ROLLBACK_FAILED"]))
-        exec_cap = str(exec_dict.get("capability", "unknown"))
-        exec_mode = str(exec_dict.get("mode", "OBSERVE"))
-        exec_params = exec_dict.get("parameters", {})
-        exec_result = exec_dict.get("result")
-        exec_duration = max(0.0, float(exec_dict.get("duration_ms", 0)))
-    else:
-        exec_status = "NOT_RUN"
-        exec_attempted = False
-        exec_cap = "unknown"
-        exec_mode = "OBSERVE"
-        exec_params = {}
-        exec_result = {}
-        exec_duration = 0
-
-    execution_normalized = {
-        "status": str(exec_status),
-        "attempted": exec_attempted,
-        "capability": exec_cap,
-        "mode": exec_mode,
-        "parameters": exec_params if isinstance(exec_params, dict) else {},
-        "result": exec_result,
-        "duration_ms": exec_duration
-    }
+    attestation = _build_stage_attestation(p4_res.get("attestation"))
+    before_obs = _build_stage_before_observations(p4_res.get("before_observations"))
+    fault_setup = _build_stage_fault_setup(p4_res.get("fault_setup"))
+    execution = _build_stage_execution(p4_res.get("execution"))
+    after_obs = _build_stage_after_observations(p4_res.get("after_observations"))
+    verification = _build_stage_verification(p4_res.get("verification"))
+    rollback = _build_stage_rollback(p4_res.get("rollback"))
+    cleanup = _build_stage_cleanup(p4_res.get("cleanup"))
 
     state_hist = p4_res.get("state_history", [])
     reason_codes = p4_res.get("reason_codes", [status])
 
     return {
-        "status": str(status),
+        "status": status,
         "started_at": p4_res.get("started_at") or datetime.now(timezone.utc).isoformat(),
         "completed_at": p4_res.get("completed_at") or datetime.now(timezone.utc).isoformat(),
         "duration_ms": max(0.0, float(p4_res.get("duration_ms", 0))),
-        "exact_input": exact_input if isinstance(exact_input, dict) else None,
+        "exact_input": exact_input,
         "target": target,
-        "attestation": _normalize_stage(p4_res.get("attestation"), "Execution blocked before target attestation"),
-        "before_observations": _normalize_stage(p4_res.get("before_observations"), "Pre-state observation skipped"),
-        "fault_setup": _normalize_stage(p4_res.get("fault_setup"), "No fault injected"),
-        "execution": execution_normalized,
-        "after_observations": _normalize_stage(p4_res.get("after_observations"), "Post-state observation skipped"),
-        "verification": _normalize_stage(p4_res.get("verification"), "Verification skipped"),
-        "rollback": _normalize_stage(p4_res.get("rollback"), "No rollback attempted"),
-        "cleanup": _normalize_stage(p4_res.get("cleanup"), "Cleanup completed"),
+        "attestation": attestation,
+        "before_observations": before_obs,
+        "fault_setup": fault_setup,
+        "execution": execution,
+        "after_observations": after_obs,
+        "verification": verification,
+        "rollback": rollback,
+        "cleanup": cleanup,
         "state_history": state_hist if isinstance(state_hist, list) else [],
         "reason_codes": reason_codes if isinstance(reason_codes, list) else [str(reason_codes)]
     }
 
 
-def _build_learning_section(rl_advisory_obj, is_simulated: bool) -> dict:
-    feat_hash = str(rl_advisory_obj.to_dict().get("feature_hash", "feat_hash_unknown"))
-    rec = str(rl_advisory_obj.to_dict().get("recommendation", "ABSTAIN"))
+def _build_learning_section(learning_episode_obj: Any, is_simulated: bool, p4_sec: dict) -> dict:
+    if is_simulated:
+        return {
+            "status": "NOT_ELIGIBLE",
+            "episode_id": f"ep_{uuid.uuid4().hex[:12]}",
+            "eligible": False,
+            "eligibility_reason": "SIMULATION_MODE",
+            "behavior_action": "ABSTAIN",
+            "reward": None,
+            "sample_weight": 0.0,
+            "feature_hash": "unspecified",
+            "stored": False
+        }
+
+    exec_attempted = bool(p4_sec.get("execution", {}).get("attempted", False))
+    attestation_passed = (p4_sec.get("attestation", {}).get("status") == "PASSED")
+    verification_status = p4_sec.get("verification", {}).get("status")
+    verification_available = verification_status in ["PASSED", "FAILED"]
+
+    if not learning_episode_obj:
+        return {
+            "status": "UNAVAILABLE",
+            "episode_id": f"ep_{uuid.uuid4().hex[:12]}",
+            "eligible": False,
+            "eligibility_reason": "NO_LEARNING_EPISODE",
+            "behavior_action": "ABSTAIN",
+            "reward": None,
+            "sample_weight": 0.0,
+            "feature_hash": "unspecified",
+            "stored": False
+        }
+
+    d = learning_episode_obj.to_dict() if hasattr(learning_episode_obj, "to_dict") else learning_episode_obj
+    ep_learning = d.get("learning", {})
+
+    eligible = bool(ep_learning.get("eligible", False))
+    reward = ep_learning.get("reward")
+    sample_weight = float(ep_learning.get("sample_weight", 0.0))
+    eligibility_reason = str(ep_learning.get("eligibility_reason", "REAL_SHADOW_EXECUTION"))
+
+    # Enforce strict learning invariants:
+    if not exec_attempted or not attestation_passed or not verification_available:
+        eligible = False
+        reward = None
+        sample_weight = 0.0
+
+    if p4_sec.get("status") == "HUMAN_REVIEW_REQUIRED":
+        eligible = False
+        reward = None
+        sample_weight = 0.0
+
+    # Rollback failure must never receive positive reward
+    if p4_sec.get("rollback", {}).get("status") == "FAILED" and reward is not None:
+        reward = min(reward, 0.0)
+
+    stored = bool(d.get("stored", True))
+    status_str = "ELIGIBLE" if eligible else "NOT_ELIGIBLE"
+
     return {
-        "status": "NOT_ELIGIBLE" if is_simulated else "ELIGIBLE",
-        "episode_id": f"ep_{uuid.uuid4().hex}",
-        "eligible": False if is_simulated else True,
-        "eligibility_reason": "SIMULATION_MODE" if is_simulated else "REAL_SHADOW_EXECUTION",
-        "behavior_action": rec,
-        "reward": None if is_simulated else 1.0,
-        "sample_weight": 0.0 if is_simulated else 1.0,
-        "feature_hash": feat_hash,
-        "stored": True
+        "status": status_str,
+        "episode_id": str(d.get("episode_id", f"ep_{uuid.uuid4().hex[:12]}")),
+        "eligible": eligible,
+        "eligibility_reason": eligibility_reason,
+        "behavior_action": str(ep_learning.get("behavior_action", "ABSTAIN")),
+        "reward": reward,
+        "sample_weight": sample_weight,
+        "feature_hash": str(d.get("context", {}).get("feature_hash", "unspecified")),
+        "stored": stored
     }
 
 
-def _build_final_summary(p4_section: dict, sol: dict, is_simulated: bool) -> dict:
-    final_status = p4_section.get("status", "NOT_RUN")
+def _build_final_summary(p4_section: dict, p3_section: dict, sol: dict, is_simulated: bool) -> dict:
+    final_outcome = p4_section.get("status", "NOT_RUN")
     exec_attempted = bool(p4_section.get("execution", {}).get("attempted", False))
-    human_req = bool(final_status == "HUMAN_REVIEW_REQUIRED")
 
-    prob_resolved = (not is_simulated) and (final_status == "SANDBOX_VERIFIED")
+    safety_dict = p3_section.get("safety", {})
+    safety_violation = (safety_dict.get("status") == "SAFETY_VIOLATION") or bool(safety_dict.get("veto_applied"))
+    human_req = bool(final_outcome == "HUMAN_REVIEW_REQUIRED" or safety_violation)
 
-    if final_status in ["SANDBOX_VERIFIED", "SIMULATION_VERIFIED"]:
-        next_action = "NO_ACTION_REQUIRED"
+    ver_status = p4_section.get("verification", {}).get("status")
+    # problem_resolved_in_sandbox: true ONLY for real successful verification
+    prob_resolved = (not is_simulated) and (final_outcome == "SANDBOX_VERIFIED") and (ver_status == "PASSED")
+
+    # Recommended next action
+    if is_simulated and final_outcome in ["SIMULATION_VERIFIED", "SANDBOX_VERIFIED"]:
+        next_action = "RUN_REAL_SHADOW_VALIDATION"
+    elif final_outcome == "SANDBOX_VERIFIED":
+        next_action = "APPROVE_PRODUCTION_DEPLOYMENT"
     elif human_req:
         next_action = "REQUIRE_HUMAN_REVIEW"
-    elif final_status == "READ_ONLY_OBSERVED":
+    elif final_outcome == "READ_ONLY_OBSERVED":
         next_action = "OBSERVE_FIRST"
+    elif final_outcome == "ATTESTATION_FAILED":
+        next_action = "INVESTIGATE_TARGET_HEALTH"
+    elif final_outcome == "PRECONDITION_FAILED":
+        next_action = "INVESTIGATE_PRECONDITIONS"
     else:
         next_action = "REQUIRE_HUMAN_REVIEW"
 
+    # Confidence result: derived from phase_3.confidence
+    conf_score = p3_section.get("confidence", {}).get("score", 0.0)
+    if conf_score >= 0.85:
+        confidence_res = "HIGH"
+    elif conf_score >= 0.60:
+        confidence_res = "MEDIUM"
+    else:
+        confidence_res = "LOW"
+
+    # Safety result: derived from phase_3.safety
+    if safety_violation:
+        safety_res = "SAFETY_VIOLATION"
+    elif safety_dict.get("status") == "PASS":
+        safety_res = "PASS"
+    else:
+        safety_res = "UNAVAILABLE"
+
+    # Limitations
+    if is_simulated:
+        limitations = [
+            "Simulation execution mode active; simulation does not prove a real-world resolution.",
+            "Production mutations deferred."
+        ]
+    else:
+        limitations = [
+            "Shadow sandbox execution mode active; production mutations deferred."
+        ]
+
     return {
-        "outcome": str(final_status),
+        "outcome": str(final_outcome),
         "problem_resolved_in_sandbox": prob_resolved,
         "execution_performed": exec_attempted,
         "human_intervention_required": human_req,
         "recommended_next_action": next_action,
-        "what_happened": f"Remediation pipeline completed with status {final_status}.",
-        "why_it_happened": str(sol.get("human_recommendation") or sol.get("reasoning") or f"Execution resulted in {final_status}."),
-        "safety_result": "BLOCKED" if human_req else ("PASS" if final_status != "PHASE3_FAILED" else "FAILED"),
-        "confidence_result": "HIGH" if final_status in ["SANDBOX_VERIFIED", "SIMULATION_VERIFIED"] else "LOW",
-        "limitations": ["Simulation execution mode active; real sandbox mutations deferred."] if is_simulated else ["Shadow sandbox execution; production mutations deferred."]
+        "what_happened": f"Remediation pipeline completed with status {final_outcome}.",
+        "why_it_happened": str(sol.get("human_recommendation") or sol.get("reasoning") or f"Execution resulted in {final_outcome}."),
+        "safety_result": safety_res,
+        "confidence_result": confidence_res,
+        "limitations": limitations
     }
 
 
@@ -447,7 +821,7 @@ def run_single_problem(
         p3_res=p3_res,
         run_id=problem_run_id
     )
-    p3_res["rl_advisory"] = rl_advisory_obj.to_dict()
+    p3_res["rl_advisory"] = rl_advisory_obj.to_dict() if hasattr(rl_advisory_obj, "to_dict") else rl_advisory_obj
 
     # 2. Construct Validated V2 Envelope Handoff
     envelope = build_action_proposed(case_id, p3_res)
@@ -515,8 +889,8 @@ def run_single_problem(
     handoff_sec = _build_handoff_section(envelope, is_valid, errs)
     rl_sec = _build_rl_advisory_section(rl_advisory_obj)
     p4_sec = _build_phase4_section(p4_context)
-    learning_sec = _build_learning_section(rl_advisory_obj, simulated_flag)
-    summary_sec = _build_final_summary(p4_sec, sol, simulated_flag)
+    learning_sec = _build_learning_section(learning_episode_obj, simulated_flag, p4_sec)
+    summary_sec = _build_final_summary(p4_sec, p3_sec, sol, simulated_flag)
     integrity_sec = _build_integrity_section(prob_sec["input_hash"], handoff_sec["payload_hash"])
 
     canonical_context = {
