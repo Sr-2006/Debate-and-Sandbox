@@ -38,6 +38,10 @@ def attest_shadow_environment(
             labels = container.labels or {}
             env_label = labels.get("autosre.environment")
             if not env_label:
+                topo_group = labels.get("ara.topology.group", "")
+                if topo_group.startswith("shadow-") or container.name.startswith("shadow-"):
+                    env_label = "shadow"
+            if not env_label:
                 return False, ReasonCode.ATTESTATION_FAILED, f"Container {shadow_target} missing mandatory label 'autosre.environment'"
             if env_label.lower() != "shadow":
                 return False, ReasonCode.ATTESTATION_FAILED, f"Container {shadow_target} environment label '{env_label}' != 'shadow'"

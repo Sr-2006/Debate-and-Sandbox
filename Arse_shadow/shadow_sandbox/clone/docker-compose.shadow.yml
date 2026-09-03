@@ -11,6 +11,7 @@ services:
     image: postgres:16.2-alpine
     container_name: shadow-postgres-db
     labels:
+      - "autosre.environment=shadow"
       - "ara.topology.group=shadow-backend"
       - "ara.topology.role=shadow-relational-database"
     ports:
@@ -41,6 +42,7 @@ services:
     container_name: shadow-redis
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-redis_secure_password}"]
     labels:
+      - "autosre.environment=shadow"
       - "ara.topology.group=shadow-backend"
       - "ara.topology.role=shadow-cache"
     ports:
@@ -66,6 +68,7 @@ services:
     image: rabbitmq:3.13.0-management-alpine
     container_name: shadow-rabbitmq
     labels:
+      - "autosre.environment=shadow"
       - "ara.topology.group=shadow-backend"
       - "ara.topology.role=shadow-message-broker"
     ports:
@@ -96,6 +99,7 @@ services:
     cap_add:
       - NET_ADMIN
     labels:
+      - "autosre.environment=shadow"
       - "ara.topology.group=shadow-backend"
       - "ara.topology.role=shadow-edge-routing"
     ports:
@@ -130,6 +134,7 @@ services:
     cap_add:
       - NET_ADMIN
     labels:
+      - "autosre.environment=shadow"
       - "ara.topology.group=shadow-backend"
       - "ara.topology.role=shadow-authentication-service"
     ports:
@@ -167,6 +172,7 @@ services:
     cap_add:
       - NET_ADMIN
     labels:
+      - "autosre.environment=shadow"
       - "ara.topology.group=shadow-backend"
       - "ara.topology.role=shadow-order-processing"
     ports:
@@ -200,6 +206,7 @@ services:
     cap_add:
       - NET_ADMIN
     labels:
+      - "autosre.environment=shadow"
       - "ara.topology.group=shadow-backend"
       - "ara.topology.role=shadow-payment-processing"
     ports:
