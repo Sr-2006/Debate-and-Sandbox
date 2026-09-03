@@ -115,10 +115,24 @@ def validate_envelope(payload: Dict[str, Any]) -> Tuple[bool, List[str], ReasonC
         if cat_mode and mode != cat_mode:
             return False, [f"Intent index {idx} mode '{mode}' does not match catalog authoritative mode '{cat_mode}' for capability '{intent_type}'"], ReasonCode.BLOCKED_INVALID_PARAMETERS
 
+        # Risk class enforcement: intent risk class can never be less conservative than catalog
+        risk_ranks = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+        cat_risk = cap_meta.get("risk_class", "LOW")
+        intent_risk = intent.get("risk_class", "LOW")
+        if risk_ranks.get(intent_risk, 1) < risk_ranks.get(cat_risk, 1):
+            return False, [f"Intent index {idx} ({intent_type}) specifies risk_class '{intent_risk}', which is less conservative than catalog risk_class '{cat_risk}'"], ReasonCode.BLOCKED_INVALID_PARAMETERS
+
+        # Human approval enforcement: intent cannot disable catalog-mandated human approval
+        cat_human_app = bool(cap_meta.get("requires_human_approval", False))
+        intent_human_app = bool(intent.get("requires_human_approval", False))
+        if cat_human_app and not intent_human_app:
+            return False, [f"Intent index {idx} ({intent_type}) specifies requires_human_approval=False, but catalog requires human approval"], ReasonCode.BLOCKED_INVALID_PARAMETERS
+
         supported_targets = cap_meta.get("supported_targets", [])
 
         if target_kind and target_kind not in supported_targets:
             return False, [f"Intent index {idx} target kind '{target_kind}' not in supported targets {supported_targets} for capability '{intent_type}'"], ReasonCode.BLOCKED_TARGET_UNRESOLVED
+
 
         # Detailed Parameter Schema Validation
         param_schema = cap_meta.get("parameters_schema", {})

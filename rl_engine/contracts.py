@@ -20,6 +20,14 @@ class ProposalRef:
 
 
 @dataclass
+class FeatureSnapshot:
+    feature_schema_version: str
+    features: Dict[str, Any]
+    feature_vector: List[float]
+    feature_hash: str
+
+
+@dataclass
 class RLAdvisoryData:
     schema_version: str
     advisory_id: str
@@ -39,9 +47,10 @@ class RLAdvisoryData:
     feature_hash: str
     latency_ms: float
     estimated_success_probability: Optional[float] = None
+    feature_snapshot: Optional[FeatureSnapshot] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "schema_version": self.schema_version,
             "advisory_id": self.advisory_id,
             "incident_id": self.incident_id,
@@ -71,6 +80,16 @@ class RLAdvisoryData:
             "feature_hash": self.feature_hash,
             "latency_ms": self.latency_ms
         }
+        if self.feature_snapshot is not None:
+            d["feature_snapshot"] = {
+                "feature_schema_version": self.feature_snapshot.feature_schema_version,
+                "features": self.feature_snapshot.features,
+                "feature_vector": self.feature_snapshot.feature_vector,
+                "feature_hash": self.feature_snapshot.feature_hash
+            }
+        return d
+
+
 
 
 @dataclass

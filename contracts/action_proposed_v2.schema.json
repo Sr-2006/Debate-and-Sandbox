@@ -57,7 +57,8 @@
         "model_name": { "type": "string" },
         "prompt_bundle_version": { "type": "string" },
         "dataset_version": { "type": "string" }
-      }
+      },
+      "additionalProperties": false
     },
     "problem_summary": {
       "type": "string"
@@ -68,20 +69,21 @@
       "properties": {
         "kind": { "type": "string" },
         "canonical_name": { "type": "string" },
-        "namespace": { "type": "string" },
-        "shadow_alias": { "type": "string" },
-        "environment_identity": { "type": "string" }
-      }
+        "namespace": { "type": ["string", "null"] },
+        "shadow_alias": { "type": ["string", "null"] },
+        "environment_identity": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
     },
     "phase3_confidence": {
       "type": "object",
       "properties": {
         "score": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
-
-        "uncertainty": { "type": "number" },
+        "uncertainty": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
         "calibration_status": { "type": "string", "enum": ["UNCALIBRATED", "CALIBRATED"] },
         "calibration_version": { "type": "string" }
-      }
+      },
+      "additionalProperties": false
     },
     "execution_tier": {
       "type": "string"
@@ -98,7 +100,6 @@
       "minItems": 1,
       "maxItems": 1,
       "items": {
-
         "type": "object",
         "required": [
           "intent_id",
@@ -127,9 +128,10 @@
             "properties": {
               "kind": { "type": "string" },
               "canonical_name": { "type": "string" },
-              "namespace": { "type": "string" },
-              "shadow_alias": { "type": "string" }
-            }
+              "namespace": { "type": ["string", "null"] },
+              "shadow_alias": { "type": ["string", "null"] }
+            },
+            "additionalProperties": false
           },
           "parameters": { "type": "object" },
           "evidence_refs": {
@@ -154,10 +156,24 @@
             "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
           },
           "requires_human_approval": { "type": "boolean" }
-        }
+        },
+        "additionalProperties": false
       }
     },
     "human_summary": {
+      "type": "string"
+    },
+    "incident_context": {
+      "type": ["object", "null"],
+      "properties": {
+        "severity": { "type": ["string", "null"], "enum": ["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL", null] },
+        "priority_score": { "type": ["number", "null"] },
+        "occurrence_count": { "type": ["integer", "null"] },
+        "current_health_score": { "type": ["number", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "payload_hash": {
       "type": "string"
     },
     "rl_advisory": {
@@ -165,4 +181,5 @@
     }
   }
 }
+
 

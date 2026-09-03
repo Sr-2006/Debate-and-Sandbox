@@ -32,7 +32,7 @@ def test_integration_shadow_advisory_attached_to_pipeline():
                 "postconditions": [],
                 "timeout_seconds": 30,
                 "max_attempts": 1,
-                "risk_class": "LOW",
+                "risk_class": "MEDIUM",
                 "requires_human_approval": False
             }
         ],

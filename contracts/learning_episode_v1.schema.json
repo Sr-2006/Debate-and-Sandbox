@@ -48,7 +48,8 @@
           "items": { "type": "number" }
         },
         "feature_hash": { "type": "string" }
-      }
+      },
+      "additionalProperties": false
     },
     "proposal": {
       "type": "object",
@@ -58,7 +59,8 @@
         "target_kind": { "type": "string" },
         "mode": { "type": "string" },
         "risk_class": { "type": "string" }
-      }
+      },
+      "additionalProperties": false
     },
     "advisory": {
       "type": "object"
@@ -74,7 +76,8 @@
         "verification_passed": { "type": "boolean" },
         "rollback_attempted": { "type": "boolean" },
         "rollback_confirmed": { "type": "boolean" }
-      }
+      },
+      "additionalProperties": false
     },
     "learning": {
       "type": "object",
@@ -83,13 +86,16 @@
         "eligible": { "type": "boolean" },
         "eligibility_reason": { "type": "string" },
         "reward": { "type": ["number", "null"] },
-        "sample_weight": { "type": "number" },
+        "sample_weight": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
         "behavior_action": {
           "type": "string",
           "enum": ["ACCEPT_PROPOSAL", "OBSERVE_FIRST", "REQUIRE_HUMAN_REVIEW", "ABSTAIN"]
         },
         "behavior_propensity": { "type": ["number", "null"] }
-      }
+      },
+      "additionalProperties": false
     }
-  }
+  },
+  "additionalProperties": false
 }
+

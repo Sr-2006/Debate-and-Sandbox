@@ -3,6 +3,24 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 from contracts.reason_codes import ReasonCode, TerminalState
 
+def get_runtime_git_commit() -> str:
+    import os
+    env_commit = os.environ.get("SOURCE_COMMIT") or os.environ.get("GIT_COMMIT") or os.environ.get("GITHUB_SHA")
+    if env_commit:
+        return env_commit
+    try:
+        import subprocess
+        res = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=2)
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
+    except Exception:
+        pass
+    return "ee8dae6b9e2d5bf2bad1776dff7cf307c807dbe6"
+
+def get_runtime_model_name() -> str:
+    import os
+    return os.environ.get("ORCHESTRATOR_MODEL", "qwen2.5:7b")
+
 @dataclass
 class TargetRef:
     kind: str
@@ -54,6 +72,14 @@ class Phase3Confidence:
 
 
 @dataclass
+class FeatureSnapshot:
+    feature_schema_version: str
+    features: Dict[str, Any]
+    feature_vector: List[float]
+    feature_hash: str
+
+
+@dataclass
 class RLAdvisory:
     schema_version: str
     advisory_id: str
@@ -73,6 +99,7 @@ class RLAdvisory:
     feature_hash: str
     latency_ms: float
     estimated_success_probability: Optional[float] = None
+    feature_snapshot: Optional[Dict[str, Any]] = None
 
 @dataclass
 class ActionProposedV2Envelope:
@@ -92,6 +119,7 @@ class ActionProposedV2Envelope:
     evidence_refs: List[str]
     intents: List[Intent]
     human_summary: str
+    incident_context: Optional[Dict[str, Any]] = None
     rl_advisory: Optional[Dict[str, Any]] = None
 
 
@@ -105,7 +133,8 @@ class ActionProposedV2Envelope:
         confidence: float = 0.0,
         correlation_id: Optional[str] = None,
         target_kind: str = "container",
-        evidence_refs: Optional[List[str]] = None
+        evidence_refs: Optional[List[str]] = None,
+        incident_context: Optional[Dict[str, Any]] = None
     ) -> 'ActionProposedV2Envelope':
         import uuid
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -113,8 +142,9 @@ class ActionProposedV2Envelope:
         event_id = f"evt_{uuid.uuid4().hex[:12]}"
         
         target = TargetRef(kind=target_kind or "container", canonical_name=target_name, shadow_alias=f"shadow-{target_name}" if target_name else None)
-        src = SourceRef(phase="phase3_debate", code_commit="2a3867c14af99d003ec8cecd044a01ef874346b8", model_name="qwen2.5-coder")
+        src = SourceRef(phase="phase3_debate", code_commit=get_runtime_git_commit(), model_name=get_runtime_model_name())
         conf = Phase3Confidence(score=confidence if confidence is not None else 0.0)
+
         
         # Aggregate evidence_refs from intents if not provided
         ev_refs = evidence_refs if evidence_refs is not None else []
@@ -140,6 +170,8 @@ class ActionProposedV2Envelope:
             safety_violation=False,
             evidence_refs=ev_refs,
             intents=intents,
-            human_summary=problem_summary[:100]
+            human_summary=problem_summary[:100],
+            incident_context=incident_context
         )
+
 

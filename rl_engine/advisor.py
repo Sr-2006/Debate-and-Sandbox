@@ -3,11 +3,14 @@ import time
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from rl_engine.config import RL_OPERATING_MODE, RL_POLICY_NAME, RL_POLICY_VERSION, RL_FEATURE_VERSION, RL_MIN_CAPABILITY_EPISODES
-from rl_engine.contracts import RLAdvisoryData, PolicyRef, ProposalRef
+from rl_engine.contracts import RLAdvisoryData, PolicyRef, ProposalRef, FeatureSnapshot
 from rl_engine.feature_extractor import extract_features
 from rl_engine.bayesian_prior import get_bayesian_prior
 from rl_engine.safety_mask import get_allowed_actions
 from rl_engine.model_store import ModelStore
+from contracts.validation import get_capabilities, is_mvp_supported
+
+
 
 
 class RLAdvisor:
@@ -44,14 +47,17 @@ class RLAdvisor:
             safety_violation = bool(env_safe.get("safety_violation", False))
             evidence_refs = env_safe.get("evidence_refs") or first_intent.get("evidence_refs") or []
 
+            # Single source of capability truth from catalog
+            capabilities = get_capabilities()
+            mvp_supported = is_mvp_supported(intent_type)
+            capability_mapped = (intent_type in capabilities) and (intent_type != "NO_SUPPORTED_ACTION")
 
-            mvp_supported = intent_type in [
-                "container.restart",
-                "postgres.setting.update",
-                "redis.eviction_policy.update",
-                "observe.logs.search"
-            ]
-            capability_mapped = intent_type != "NO_SUPPORTED_ACTION" and intent_type != "unknown"
+            # Target resolution evaluation
+            canonical_target = target_ref.get("canonical_name")
+            target_resolved = bool(
+                canonical_target
+                and str(canonical_target).lower() not in {"unknown", "unknown-service", "none", "n/a", ""}
+            )
 
             # Query Bayesian Prior
             lower_bound, sample_size, successes, failures = get_bayesian_prior(intent_type, target_kind)
@@ -73,15 +79,25 @@ class RLAdvisor:
                 human_approval=requires_human,
                 capability_mapped=capability_mapped,
                 mvp_supported=mvp_supported,
-                evidence_refs=evidence_refs
+                evidence_refs=evidence_refs,
+                target_resolved=target_resolved
             )
 
-            is_cold_start = (self.model_version == "cold-start") or (sample_size < RL_MIN_CAPABILITY_EPISODES)
+            # Feature schema compatibility check with loaded model
+            model_feat_ver = self.model_meta.get("feature_schema_version", RL_FEATURE_VERSION)
+            schema_mismatch = (self.model_version != "cold-start") and (model_feat_ver != RL_FEATURE_VERSION)
+
+            is_cold_start = (self.model_version == "cold-start") or (sample_size < RL_MIN_CAPABILITY_EPISODES) or schema_mismatch
             reason_codes = list(mask_reasons)
 
-            if is_cold_start:
+            if schema_mismatch:
+                reason_codes.append("MODEL_FEATURE_SCHEMA_MISMATCH")
+                reason_codes.append("RL_COLD_START")
+            elif is_cold_start:
                 reason_codes.append("INSUFFICIENT_REAL_OUTCOMES")
                 reason_codes.append("RL_COLD_START")
+
+            if is_cold_start:
                 # Deterministic Cold-Start Rules
                 if len(allowed_actions) == 1:
                     recommendation = allowed_actions[0]
@@ -105,6 +121,13 @@ class RLAdvisor:
             influence_allowed = (self.operating_mode == "ADVISORY") and (not is_cold_start)
 
             latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+
+            snapshot = FeatureSnapshot(
+                feature_schema_version=RL_FEATURE_VERSION,
+                features=feat_dict,
+                feature_vector=feat_vector,
+                feature_hash=feat_hash
+            )
 
             return RLAdvisoryData(
                 schema_version="1.0",
@@ -134,8 +157,11 @@ class RLAdvisor:
                 feature_schema_version=RL_FEATURE_VERSION,
                 feature_hash=feat_hash,
                 latency_ms=latency_ms,
-                estimated_success_probability=round(lower_bound, 4)
+                estimated_success_probability=round(lower_bound, 4),
+                feature_snapshot=snapshot
             )
+
+
 
         except Exception as e:
             # Fail-open fallback

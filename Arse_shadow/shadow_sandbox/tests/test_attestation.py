@@ -49,7 +49,7 @@ def make_valid_v2_envelope() -> dict:
                 "postconditions": [],
                 "timeout_seconds": 30,
                 "max_attempts": 1,
-                "risk_class": "LOW",
+                "risk_class": "MEDIUM",
                 "requires_human_approval": False
             }
         ],
@@ -215,6 +215,7 @@ def test_high_risk_and_low_confidence_priority(mock_docker):
     envelope["safety_violation"] = True
     envelope["intents"][0]["intent_type"] = "node.drain"
     envelope["intents"][0]["mode"] = "MUTATE_HIGH_RISK"
+    envelope["intents"][0]["risk_class"] = "HIGH"
     envelope["intents"][0]["target_ref"] = {"kind": "node", "canonical_name": "node-1", "namespace": "shadow"}
     envelope["intents"][0]["parameters"] = {"node_name": "node-1"}
     envelope["intents"][0]["requires_human_approval"] = True

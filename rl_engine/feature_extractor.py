@@ -1,8 +1,9 @@
 import math
 import hashlib
 import json
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple, List, Optional
 from rl_engine.config import CATEGORICAL_VOCAB, RL_FEATURE_VERSION
+from contracts.validation import is_mvp_supported, get_capabilities
 
 
 def _one_hot(value: str, vocab: List[str]) -> List[float]:
@@ -14,16 +15,18 @@ def extract_features(
     envelope: Dict[str, Any],
     beta_lower_bound: float = 0.5,
     sample_size: int = 0,
-    health_score: float = 1.0,
-    occurrence_count: int = 1
+    health_score: Optional[float] = None,
+    occurrence_count: Optional[int] = None,
+    attestation_history_rate: Optional[float] = None,
+    prior_verification_rate: Optional[float] = None
 ) -> Tuple[Dict[str, Any], List[float], str]:
     """
-    Extracts deterministic numerical and one-hot categorical features (features-v1)
+    Extracts deterministic numerical and one-hot categorical features
     from an ActionProposedV2 envelope and contextual metadata.
     Returns: (features_dict, feature_vector, feature_hash)
     """
     intents = envelope.get("intents", [])
-    first_intent = intents[0] if intents else {}
+    first_intent = intents[0] if (intents and isinstance(intents, list) and isinstance(intents[0], dict)) else {}
     target_ref = first_intent.get("target_ref") or envelope.get("target_ref") or {}
 
     p3_conf = envelope.get("phase3_confidence", {})
@@ -40,36 +43,64 @@ def extract_features(
     requires_human_app = bool(first_intent.get("requires_human_approval", False))
     
     intent_type = first_intent.get("intent_type", "NO_SUPPORTED_ACTION")
-    mvp_supported = 1.0 if intent_type in [
-        "container.restart",
-        "postgres.setting.update",
-        "redis.eviction_policy.update",
-        "observe.logs.search"
-    ] else 0.0
+    mvp_supported = 1.0 if is_mvp_supported(intent_type) else 0.0
 
     mode = first_intent.get("mode", "OBSERVE")
     is_observe = 1.0 if mode == "OBSERVE" else 0.0
     is_mutative = 1.0 if mode in ["MUTATE_REVERSIBLE", "MUTATE_HIGH_RISK"] else 0.0
 
-    severity_str = envelope.get("severity", "MEDIUM").upper()
+    # Authoritative incident context
+    inc_ctx = envelope.get("incident_context") or envelope.get("incident_event") or {}
+    severity_str = str(inc_ctx.get("severity") or envelope.get("severity") or "MEDIUM").upper()
     sev_map = {"INFO": 0.0, "LOW": 0.2, "MEDIUM": 0.4, "HIGH": 0.7, "CRITICAL": 1.0}
     severity_norm = sev_map.get(severity_str, 0.4)
 
-    health_deficit = max(0.0, min(1.0, 1.0 - float(health_score)))
-    log_occ_scaled = min(1.0, math.log1p(max(0, occurrence_count)) / 10.0)
+    eff_occ_count = inc_ctx.get("occurrence_count", occurrence_count)
+    if eff_occ_count is None:
+        eff_occ_count = 1
+    log_occ_scaled = min(1.0, math.log1p(max(0, eff_occ_count)) / 10.0)
+
+    # Health deficit
+    eff_health = inc_ctx.get("current_health_score", health_score)
+    if eff_health is not None:
+        # Scale 0-100 to 0.0-1.0 if > 1
+        h_val = float(eff_health) / 100.0 if float(eff_health) > 1.0 else float(eff_health)
+        health_deficit = max(0.0, min(1.0, 1.0 - h_val))
+    else:
+        health_deficit = 0.0
+
     hist_sample_scaled = min(1.0, max(0, sample_size) / 100.0)
 
     target_kind = target_ref.get("kind", "container")
     risk_class = first_intent.get("risk_class", "LOW")
     exec_tier = envelope.get("execution_tier", "tier_1")
 
-    # Construct features dictionary
+    # Truthful agent agreement & valid ratios without fake defaults
+    agent_valid_ratio = None
+    agent_component_agreement = None
+
+    if isinstance(p3_conf, dict):
+        if "agent_valid_ratio" in p3_conf:
+            agent_valid_ratio = float(p3_conf["agent_valid_ratio"])
+        if "agreement_ratio" in p3_conf:
+            agent_component_agreement = float(p3_conf["agreement_ratio"])
+        elif "component_agreement" in p3_conf:
+            agent_component_agreement = float(p3_conf["component_agreement"])
+
+    has_agent_agreement = agent_component_agreement is not None
+    has_attestation_history = attestation_history_rate is not None
+    has_verification_history = prior_verification_rate is not None
+
+    # Construct truthful features dictionary
     features_dict = {
         "feature_schema_version": RL_FEATURE_VERSION,
         "phase3_confidence": conf_score,
         "evidence_count_capped": min(ev_count, 10) / 10.0,
-        "agent_valid_ratio": 1.0,  # 3/3 valid in default orchestrator run
-        "agent_component_agreement": p3_conf.get("agreement_ratio", 0.95) if isinstance(p3_conf, dict) else 0.95,
+        "agent_valid_ratio": agent_valid_ratio,
+        "agent_component_agreement": agent_component_agreement,
+        "has_agent_agreement": has_agent_agreement,
+        "has_attestation_history": has_attestation_history,
+        "has_verification_history": has_verification_history,
         "safety_violation": 1.0 if safety_violation else 0.0,
         "requires_human_approval": 1.0 if requires_human_app else 0.0,
         "mvp_supported": mvp_supported,
@@ -80,8 +111,8 @@ def extract_features(
         "log_occurrence_scaled": log_occ_scaled,
         "history_sample_size_scaled": hist_sample_scaled,
         "beta_execution_lower_bound": float(beta_lower_bound),
-        "target_attestation_history_rate": 1.0,
-        "prior_verification_rate": 1.0,
+        "target_attestation_history_rate": attestation_history_rate,
+        "prior_verification_rate": prior_verification_rate,
         "intent_type": intent_type,
         "target_kind": target_kind,
         "mode": mode,
@@ -89,12 +120,12 @@ def extract_features(
         "execution_tier": exec_tier
     }
 
-    # Vector construction (16 numerical + 28 categorical = 44 elements)
+    # Deterministic vector construction (16 numerical + 28 categorical = 44 elements)
     vector = [
         conf_score,
         min(ev_count, 10) / 10.0,
-        1.0,
-        float(features_dict["agent_component_agreement"]),
+        float(agent_valid_ratio) if agent_valid_ratio is not None else 0.0,
+        float(agent_component_agreement) if agent_component_agreement is not None else 0.0,
         1.0 if safety_violation else 0.0,
         1.0 if requires_human_app else 0.0,
         mvp_supported,
@@ -105,8 +136,8 @@ def extract_features(
         log_occ_scaled,
         hist_sample_scaled,
         float(beta_lower_bound),
-        1.0,
-        1.0
+        float(attestation_history_rate) if attestation_history_rate is not None else 0.0,
+        float(prior_verification_rate) if prior_verification_rate is not None else 0.0
     ]
 
     vector.extend(_one_hot(intent_type, CATEGORICAL_VOCAB["capabilities"]))
@@ -120,3 +151,4 @@ def extract_features(
     feature_hash = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
 
     return features_dict, vector, feature_hash
+

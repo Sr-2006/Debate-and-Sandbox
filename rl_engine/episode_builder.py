@@ -30,15 +30,48 @@ def build_learning_episode(
     target_ref = first_intent.get("target_ref") or envelope.get("target_ref") or {}
     target_kind = target_ref.get("kind", "container")
 
-    # Extract context features
-    features_dict, feature_vector, feature_hash = extract_features(envelope)
+    # Extract or reuse frozen context features from advisory to ensure strict ML consistency
+    advisory_dict = advisory.to_dict() if hasattr(advisory, "to_dict") else (advisory if isinstance(advisory, dict) else {})
+    
+    snapshot = getattr(advisory, "feature_snapshot", None)
+    if not snapshot and isinstance(advisory_dict, dict) and "feature_snapshot" in advisory_dict:
+        s_dict = advisory_dict["feature_snapshot"]
+        if isinstance(s_dict, dict):
+            features_dict = s_dict.get("features")
+            feature_vector = s_dict.get("feature_vector")
+            feature_hash = s_dict.get("feature_hash")
+            feat_schema_ver = s_dict.get("feature_schema_version", RL_FEATURE_VERSION)
+        else:
+            features_dict, feature_vector, feature_hash, feat_schema_ver = None, None, None, None
+    elif snapshot is not None:
+        features_dict = snapshot.features
+        feature_vector = snapshot.feature_vector
+        feature_hash = snapshot.feature_hash
+        feat_schema_ver = snapshot.feature_schema_version
+    else:
+        features_dict, feature_vector, feature_hash, feat_schema_ver = None, None, None, None
 
-    context = EpisodeContext(
-        feature_schema_version=RL_FEATURE_VERSION,
-        features=features_dict,
-        feature_vector=feature_vector,
-        feature_hash=feature_hash
-    )
+    effective_schema_ver = feat_schema_ver or advisory_dict.get("feature_schema_version", RL_FEATURE_VERSION)
+    snapshot_missing = (features_dict is None or feature_vector is None)
+
+    if not snapshot_missing:
+        context = EpisodeContext(
+            feature_schema_version=effective_schema_ver,
+            features=features_dict,
+            feature_vector=feature_vector,
+            feature_hash=feature_hash or ""
+        )
+    else:
+        # Fallback path
+        f_dict, f_vec, f_hash = extract_features(envelope)
+        context = EpisodeContext(
+            feature_schema_version=effective_schema_ver,
+            features=f_dict,
+            feature_vector=f_vec,
+            feature_hash=f_hash
+        )
+
+
 
     proposal = ProposalRef(
         intent_type=intent_type,
@@ -76,6 +109,13 @@ def build_learning_episode(
     # Evaluate Reward & Eligibility
     eligible, eligibility_reason, reward, sample_weight = evaluate_outcome_reward(phase4_result)
 
+    # For features-v2, a missing feature snapshot strictly precludes training eligibility
+    if snapshot_missing and effective_schema_ver == "features-v2":
+        eligible = False
+        eligibility_reason = "FEATURE_SNAPSHOT_MISSING"
+        sample_weight = 0.0
+        reward = None
+
     # Determine behavior action executed by system
     if status in ["SANDBOX_VERIFIED", "SIMULATION_VERIFIED"]:
         behavior_action = "ACCEPT_PROPOSAL"
@@ -94,6 +134,7 @@ def build_learning_episode(
         behavior_action=behavior_action,
         behavior_propensity=None
     )
+
 
     return LearningEpisodeData(
         schema_version="1.0",

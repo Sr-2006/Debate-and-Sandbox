@@ -51,7 +51,8 @@
           "type": "string",
           "enum": ["SHADOW", "ADVISORY"]
         }
-      }
+      },
+      "additionalProperties": false
     },
     "proposal": {
       "type": "object",
@@ -61,7 +62,8 @@
         "target_kind": { "type": "string" },
         "mode": { "type": "string" },
         "risk_class": { "type": "string" }
-      }
+      },
+      "additionalProperties": false
     },
     "recommendation": {
       "type": "string",
@@ -75,7 +77,8 @@
         "OBSERVE_FIRST": { "type": ["number", "null"] },
         "REQUIRE_HUMAN_REVIEW": { "type": ["number", "null"] },
         "ABSTAIN": { "type": ["number", "null"] }
-      }
+      },
+      "additionalProperties": false
     },
     "estimated_success_probability": {
       "type": ["number", "null"],
@@ -84,7 +87,8 @@
     },
     "uncertainty": {
       "type": "number",
-      "minimum": 0.0
+      "minimum": 0.0,
+      "maximum": 1.0
     },
     "sample_size": {
       "type": "integer",
@@ -109,6 +113,29 @@
     "latency_ms": {
       "type": "number",
       "minimum": 0.0
+    },
+    "feature_snapshot": {
+      "type": ["object", "null"],
+      "properties": {
+        "feature_schema_version": { "type": "string" },
+        "features": { "type": "object" },
+        "feature_vector": {
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "feature_hash": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "features": {
+      "type": ["object", "null"]
+    },
+    "feature_vector": {
+      "type": ["array", "null"],
+      "items": { "type": "number" }
     }
-  }
+  },
+  "additionalProperties": false
 }
+
+

@@ -22,6 +22,10 @@ def get_allowed_actions(
         reasons.append("RL_PHASE3_FAILED")
         return ["ABSTAIN"], reasons
 
+    if not target_resolved:
+        reasons.append("RL_TARGET_UNRESOLVED")
+        return ["ABSTAIN"], reasons
+
     if not capability_mapped:
         reasons.append("RL_UNMAPPED_CAPABILITY")
         return ["ABSTAIN"], reasons

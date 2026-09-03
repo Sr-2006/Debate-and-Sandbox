@@ -195,6 +195,31 @@ def build_action_proposed(
 
 
 
+    # Extract authoritative incident context from original problem input
+    incident_context = None
+    if isinstance(orig_prob, dict):
+        inc_evt = orig_prob.get("incident_event") or {}
+        sys_ctx = orig_prob.get("system_context") or {}
+        sev = inc_evt.get("severity") or orig_prob.get("severity") or "MEDIUM"
+        prio = inc_evt.get("priority_score") or orig_prob.get("priority_score")
+        occ = inc_evt.get("occurrence_count") or orig_prob.get("occurrence_count")
+        health = sys_ctx.get("current_health_score")
+        incident_context = {
+            "severity": sev.upper() if isinstance(sev, str) else "MEDIUM",
+            "priority_score": float(prio) if prio is not None else None,
+            "occurrence_count": int(occ) if occ is not None else None,
+            "current_health_score": float(health) if health is not None else None
+        }
+
+    if incident_context is None:
+        incident_context = {
+            "severity": "MEDIUM",
+            "priority_score": 50.0,
+            "occurrence_count": 1,
+            "current_health_score": 100.0
+        }
+
+
     env = ActionProposedV2Envelope.create_default(
         incident_id=incident_id,
         problem_summary=problem_text,
@@ -202,7 +227,8 @@ def build_action_proposed(
         intents=intents,
         confidence=conf_float,
         correlation_id=correlation_id,
-        evidence_refs=evidence_anchors
+        evidence_refs=evidence_anchors,
+        incident_context=incident_context
     )
 
     dict_repr = {
@@ -254,6 +280,9 @@ def build_action_proposed(
         "human_summary": env.human_summary
     }
 
+    if incident_context is not None:
+        dict_repr["incident_context"] = incident_context
+
     if result.get("rl_advisory"):
         dict_repr["rl_advisory"] = result.get("rl_advisory")
 
@@ -263,6 +292,7 @@ def build_action_proposed(
     # Enforce schema validation before returning/publishing
     is_valid, errors, reason_code = validate_envelope(dict_repr)
     if not is_valid:
+
         raise ValueError(f"Envelope validation failed ({reason_code.value}): {errors}")
 
     return dict_repr
