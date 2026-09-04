@@ -102,6 +102,9 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
+        "sanitized": {
+          "type": ["boolean", "null"]
+        },
         "signature": {
           "type": ["string", "null"]
         },

@@ -81,6 +81,7 @@ def valid_event():
         "metrics": {},
         "integrity": {
             "payload_sha256": payload_hash,
+            "sanitized": True,
             "signature": None,
             "commit_sha": None
         },
@@ -97,18 +98,78 @@ def test_valid_canonical_event_passes(valid_event):
     assert result.computed_hash == valid_event["integrity"]["payload_sha256"]
 
 
-def test_live_style_event_shape_passes(valid_event):
-    """Verify exact live-style shape with all Stage A blocks and envelope metadata is accepted."""
+def test_live_style_event_corr_b324_shape_passes(valid_event):
+    """Verify exact live-style shape from corr_b324a7f776d04783837e3d612e6bfa78 is accepted."""
     event = copy.deepcopy(valid_event)
-    event["event_id"] = "evt_000ae537e54847e3b00c307fa632b19f"
-    event["correlation_id"] = "corr_251ba019509c4aef948753d1e218e364"
+    event["event_id"] = "evt_3bb1bed38c6d479ea3f8c84e1ed2fa72"
+    event["correlation_id"] = "corr_b324a7f776d04783837e3d612e6bfa78"
     event["incident_id"] = "order-service_51"
+    event["phase"] = "laptop1_handoff"
+    event["root_event_id"] = "evt_1c12c5d6d5334e2c8a4add523233ca3a"
+    event["schema_version"] = "1.0"
+    event["source"] = {
+        "engine": "laptop1",
+        "git_sha": "cffb15e2b6e30e834bbb5c84eb355e42c99f9094",
+        "version": "1.0.0"
+    }
+    event["status"] = "SUCCESS"
+    event["timestamp"] = "2026-09-04T17:22:20.869800+00:00"
     event["payload"]["incident_event"]["incident_id"] = "order-service_51"
-    event["integrity"]["payload_sha256"] = compute_payload_sha256(event["payload"])
+    event["integrity"] = {
+        "payload_sha256": compute_payload_sha256(event["payload"]),
+        "sanitized": True
+    }
 
     result = validate_incident_event(event)
     assert result.is_valid is True
     assert result.reason_code == TransportReasonCode.VALID
+
+
+def test_integrity_sanitized_boolean_and_null_allowed(valid_event):
+    """Verify integrity.sanitized accepts True, False, and None."""
+    for val in [True, False, None]:
+        event = copy.deepcopy(valid_event)
+        event["integrity"]["sanitized"] = val
+        result = validate_incident_event(event)
+        assert result.is_valid is True
+        assert result.reason_code == TransportReasonCode.VALID
+
+
+def test_sanitized_at_invalid_paths_rejected(valid_event):
+    """Verify sanitized placed at root, source, or payload is strictly rejected."""
+    # 1. At root
+    event1 = copy.deepcopy(valid_event)
+    del event1["integrity"]["sanitized"]
+    event1["sanitized"] = True
+    res1 = validate_incident_event(event1)
+    assert res1.is_valid is False
+    assert res1.reason_code == TransportReasonCode.REJECTED_SCHEMA
+
+    # 2. In source
+    event2 = copy.deepcopy(valid_event)
+    del event2["integrity"]["sanitized"]
+    event2["source"]["sanitized"] = True
+    res2 = validate_incident_event(event2)
+    assert res2.is_valid is False
+    assert res2.reason_code == TransportReasonCode.REJECTED_SCHEMA
+
+    # 3. In payload
+    event3 = copy.deepcopy(valid_event)
+    del event3["integrity"]["sanitized"]
+    event3["payload"]["sanitized"] = True
+    event3["integrity"]["payload_sha256"] = compute_payload_sha256(event3["payload"])
+    res3 = validate_incident_event(event3)
+    assert res3.is_valid is False
+    assert res3.reason_code == TransportReasonCode.REJECTED_SCHEMA
+
+
+def test_sanitized_invalid_type_rejected(valid_event):
+    """Verify non-boolean integrity.sanitized is rejected."""
+    event = copy.deepcopy(valid_event)
+    event["integrity"]["sanitized"] = "yes"
+    result = validate_incident_event(event)
+    assert result.is_valid is False
+    assert result.reason_code == TransportReasonCode.REJECTED_SCHEMA
 
 
 def test_legacy_event_type_rejected(valid_event):

@@ -56,6 +56,7 @@ def test_schema_structure_and_properties_parity():
     assert integrity_schema["required"] == ["payload_sha256"]
     assert set(integrity_schema["properties"].keys()) == {
         "payload_sha256",
+        "sanitized",
         "signature",
         "commit_sha"
     }
@@ -103,6 +104,7 @@ def test_reject_event_with_unknown_top_level_field():
         },
         "integrity": {
             "payload_sha256": payload_hash,
+            "sanitized": True,
             "signature": None,
             "commit_sha": None
         },
