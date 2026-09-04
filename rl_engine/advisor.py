@@ -85,7 +85,10 @@ class RLAdvisor:
 
             # Feature schema compatibility check with loaded model
             model_feat_ver = self.model_meta.get("feature_schema_version", RL_FEATURE_VERSION)
-            schema_mismatch = (self.model_version != "cold-start") and (model_feat_ver != RL_FEATURE_VERSION)
+            model_feat_dim = self.model_meta.get("feature_dimension", len(feat_vector))
+            schema_mismatch = (self.model_version != "cold-start") and (
+                model_feat_ver != RL_FEATURE_VERSION or model_feat_dim != len(feat_vector)
+            )
 
             is_cold_start = (self.model_version == "cold-start") or (sample_size < RL_MIN_CAPABILITY_EPISODES) or schema_mismatch
             reason_codes = list(mask_reasons)

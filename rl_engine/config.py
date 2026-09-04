@@ -4,7 +4,8 @@ RL_ENABLED = os.environ.get("RL_ENABLED", "true").lower() == "true"
 RL_OPERATING_MODE = os.environ.get("RL_OPERATING_MODE", "SHADOW")  # SHADOW | ADVISORY
 RL_POLICY_NAME = os.environ.get("RL_POLICY_NAME", "safe_disjoint_linucb")
 RL_POLICY_VERSION = os.environ.get("RL_POLICY_VERSION", "rl-mvp-1")
-RL_FEATURE_VERSION = os.environ.get("RL_FEATURE_VERSION", "features-v1")
+RL_FEATURE_VERSION = os.environ.get("RL_FEATURE_VERSION", "features-v2")
+RL_FEATURE_DIMENSION = 51  # 23 numerical + 28 categorical
 RL_REWARD_VERSION = os.environ.get("RL_REWARD_VERSION", "reward-v1")
 RL_ALPHA = float(os.environ.get("RL_ALPHA", "0.25"))
 RL_MIN_REAL_EPISODES = int(os.environ.get("RL_MIN_REAL_EPISODES", "100"))

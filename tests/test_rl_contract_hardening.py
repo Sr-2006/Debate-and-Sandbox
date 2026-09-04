@@ -1,4 +1,4 @@
-﻿import json
+import json
 import os
 import copy
 import pytest
@@ -325,3 +325,209 @@ def test_dynamic_provenance():
     assert commit and len(commit) >= 7
     model = get_runtime_model_name()
     assert model and "qwen" in model
+
+
+def test_rl_feature_version_defaults():
+    """Verify RL_FEATURE_VERSION defaults to features-v2 and dimension is 51."""
+    from rl_engine.config import RL_FEATURE_VERSION, RL_FEATURE_DIMENSION
+    assert RL_FEATURE_VERSION == "features-v2"
+    assert RL_FEATURE_DIMENSION == 51
+
+
+def test_missing_severity_distinct_from_info():
+    """Verify missing severity (norm=0.0, has=0.0) != observed INFO (norm=0.0, has=1.0)."""
+    base_env = {
+        "incident_id": "case_sev",
+        "phase3_confidence": {"score": 0.8},
+        "intents": [{"intent_type": "container.restart", "mode": "MUTATE_REVERSIBLE"}]
+    }
+
+    # Missing severity
+    env_missing = copy.deepcopy(base_env)
+    f_missing, vec_missing, _ = extract_features(env_missing)
+    assert f_missing["has_severity"] is False
+    assert f_missing["severity_normalized"] is None
+    # Index 11 is severity_norm, Index 12 is has_severity
+    assert vec_missing[11] == 0.0
+    assert vec_missing[12] == 0.0
+
+    # Actual INFO severity
+    env_info = copy.deepcopy(base_env)
+    env_info["incident_context"] = {"severity": "INFO"}
+    f_info, vec_info, _ = extract_features(env_info)
+    assert f_info["has_severity"] is True
+    assert f_info["severity_normalized"] == 0.0
+    assert vec_info[11] == 0.0
+    assert vec_info[12] == 1.0
+
+    # Vectors must not be equal
+    assert vec_missing != vec_info
+
+
+def test_missing_health_distinct_from_perfect_health():
+    """Verify missing health (deficit=0.0, has=0.0) != perfect health (deficit=0.0, has=1.0)."""
+    base_env = {
+        "incident_id": "case_health",
+        "phase3_confidence": {"score": 0.8},
+        "intents": [{"intent_type": "container.restart", "mode": "MUTATE_REVERSIBLE"}]
+    }
+
+    # Missing health
+    env_missing = copy.deepcopy(base_env)
+    f_missing, vec_missing, _ = extract_features(env_missing)
+    assert f_missing["has_health_score"] is False
+    assert f_missing["health_deficit"] is None
+    # Index 13 is health_deficit, Index 14 is has_health_score
+    assert vec_missing[13] == 0.0
+    assert vec_missing[14] == 0.0
+
+    # Perfect health (100.0 or 1.0 -> deficit 0.0)
+    env_perf = copy.deepcopy(base_env)
+    env_perf["incident_context"] = {"current_health_score": 100.0}
+    f_perf, vec_perf, _ = extract_features(env_perf)
+    assert f_perf["has_health_score"] is True
+    assert f_perf["health_deficit"] == 0.0
+    assert vec_perf[13] == 0.0
+    assert vec_perf[14] == 1.0
+
+    # Vectors must not be equal
+    assert vec_missing != vec_perf
+
+
+def test_missing_occurrence_distinct_from_observed_zero():
+    """Verify missing occurrence (scaled=0.0, has=0.0) != observed 0 (scaled=0.0, has=1.0)."""
+    base_env = {
+        "incident_id": "case_occ",
+        "phase3_confidence": {"score": 0.8},
+        "intents": [{"intent_type": "container.restart", "mode": "MUTATE_REVERSIBLE"}]
+    }
+
+    # Missing occurrence count
+    env_missing = copy.deepcopy(base_env)
+    f_missing, vec_missing, _ = extract_features(env_missing)
+    assert f_missing["has_occurrence_count"] is False
+    assert f_missing["log_occurrence_scaled"] is None
+    # Index 15 is log_occ_scaled, Index 16 is has_occurrence_count
+    assert vec_missing[15] == 0.0
+    assert vec_missing[16] == 0.0
+
+    # Observed 0 occurrence count
+    env_zero = copy.deepcopy(base_env)
+    env_zero["incident_context"] = {"occurrence_count": 0}
+    f_zero, vec_zero, _ = extract_features(env_zero)
+    assert f_zero["has_occurrence_count"] is True
+    assert f_zero["log_occurrence_scaled"] == 0.0
+    assert vec_zero[15] == 0.0
+    assert vec_zero[16] == 1.0
+
+    # Vectors must not be equal
+    assert vec_missing != vec_zero
+
+
+def test_missing_agreement_distinct_from_observed_zero():
+    """Verify missing agreement (val=0.0, has=0.0) != observed 0.0 (val=0.0, has=1.0)."""
+    base_env = {
+        "incident_id": "case_agr",
+        "phase3_confidence": {"score": 0.8},
+        "intents": [{"intent_type": "container.restart", "mode": "MUTATE_REVERSIBLE"}]
+    }
+
+    # Missing agreement
+    env_missing = copy.deepcopy(base_env)
+    f_missing, vec_missing, _ = extract_features(env_missing)
+    assert f_missing["has_agent_agreement"] is False
+    assert f_missing["agent_component_agreement"] is None
+    # Index 4 is agent_agreement_val, Index 5 is has_agent_agreement
+    assert vec_missing[4] == 0.0
+    assert vec_missing[5] == 0.0
+
+    # Observed 0.0 agreement
+    env_zero = copy.deepcopy(base_env)
+    env_zero["phase3_confidence"] = {"score": 0.8, "agreement_ratio": 0.0}
+    f_zero, vec_zero, _ = extract_features(env_zero)
+    assert f_zero["has_agent_agreement"] is True
+    assert f_zero["agent_component_agreement"] == 0.0
+    assert vec_zero[4] == 0.0
+    assert vec_zero[5] == 1.0
+
+    # Vectors must not be equal
+    assert vec_missing != vec_zero
+
+
+def test_vector_contains_all_has_indicators():
+    """Verify vector contains all 7 explicit has_* missingness indicator dimensions."""
+    envelope = {
+        "incident_id": "case_indicators",
+        "phase3_confidence": {"score": 0.85, "agent_valid_ratio": 1.0, "agreement_ratio": 0.9},
+        "incident_context": {"severity": "HIGH", "occurrence_count": 5, "current_health_score": 80.0},
+        "intents": [{"intent_type": "container.restart", "mode": "MUTATE_REVERSIBLE"}]
+    }
+
+    f_dict, vec, _ = extract_features(
+        envelope,
+        attestation_history_rate=1.0,
+        prior_verification_rate=1.0
+    )
+
+    assert len(vec) == 51
+    # Check boolean flags in features dict
+    assert f_dict["has_agent_valid_ratio"] is True
+    assert f_dict["has_agent_agreement"] is True
+    assert f_dict["has_health_score"] is True
+    assert f_dict["has_occurrence_count"] is True
+    assert f_dict["has_severity"] is True
+    assert f_dict["has_attestation_history"] is True
+    assert f_dict["has_verification_history"] is True
+
+    # Check indicator vector positions:
+    # 3: has_agent_valid_ratio
+    # 5: has_agent_agreement
+    # 12: has_severity
+    # 14: has_health_score
+    # 16: has_occurrence_count
+    # 20: has_attestation_history
+    # 22: has_verification_history
+    assert vec[3] == 1.0
+    assert vec[5] == 1.0
+    assert vec[12] == 1.0
+    assert vec[14] == 1.0
+    assert vec[16] == 1.0
+    assert vec[20] == 1.0
+    assert vec[22] == 1.0
+
+
+def test_v1_model_refuses_v2_feature_vector_safely():
+    """Verify model trained on v1 schema/dimension triggers MODEL_FEATURE_SCHEMA_MISMATCH and cold-start fallback."""
+    from rl_engine.policy import SafeDisjointLinUCB
+    advisor = RLAdvisor(operating_mode="ADVISORY")
+
+    # Simulate loaded model having features-v1 schema and 44 dimension
+    advisor.model_version = "v1-legacy-promoted"
+    advisor.policy = SafeDisjointLinUCB(feature_dim=44)
+    advisor.model_meta = {
+        "model_version": "v1-legacy-promoted",
+        "feature_schema_version": "features-v1",
+        "feature_dimension": 44,
+        "cold_start": False
+    }
+
+    envelope = {
+        "incident_id": "case_v1_refusal",
+        "phase3_confidence": {"score": 0.90},
+        "target_ref": {"kind": "container", "canonical_name": "user-service"},
+        "intents": [
+            {
+                "intent_type": "container.restart",
+                "mode": "MUTATE_REVERSIBLE",
+                "risk_class": "MEDIUM",
+                "requires_human_approval": False,
+                "target_ref": {"kind": "container", "canonical_name": "user-service"}
+            }
+        ]
+    }
+
+    advisory = advisor.generate_advisory(envelope)
+    assert advisory.cold_start is True
+    assert "MODEL_FEATURE_SCHEMA_MISMATCH" in advisory.reason_codes
+    assert "RL_COLD_START" in advisory.reason_codes
+    assert advisory.influence_allowed is False

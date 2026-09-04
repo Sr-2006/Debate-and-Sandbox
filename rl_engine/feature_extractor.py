@@ -51,20 +51,21 @@ def extract_features(
 
     # Authoritative incident context
     inc_ctx = envelope.get("incident_context") or envelope.get("incident_event") or {}
-    severity_str = str(inc_ctx.get("severity") or envelope.get("severity") or "MEDIUM").upper()
+    raw_sev = inc_ctx.get("severity") or envelope.get("severity")
+    has_severity = 1.0 if raw_sev is not None else 0.0
     sev_map = {"INFO": 0.0, "LOW": 0.2, "MEDIUM": 0.4, "HIGH": 0.7, "CRITICAL": 1.0}
-    severity_norm = sev_map.get(severity_str, 0.4)
+    severity_norm = sev_map.get(str(raw_sev).upper(), 0.0) if raw_sev is not None else 0.0
 
-    eff_occ_count = inc_ctx.get("occurrence_count", occurrence_count)
-    if eff_occ_count is None:
-        eff_occ_count = 1
-    log_occ_scaled = min(1.0, math.log1p(max(0, eff_occ_count)) / 10.0)
+    raw_occ = inc_ctx.get("occurrence_count", occurrence_count)
+    has_occurrence_count = 1.0 if raw_occ is not None else 0.0
+    log_occ_scaled = min(1.0, math.log1p(max(0, raw_occ)) / 10.0) if raw_occ is not None else 0.0
 
     # Health deficit
-    eff_health = inc_ctx.get("current_health_score", health_score)
-    if eff_health is not None:
+    raw_health = inc_ctx.get("current_health_score", health_score)
+    has_health_score = 1.0 if raw_health is not None else 0.0
+    if raw_health is not None:
         # Scale 0-100 to 0.0-1.0 if > 1
-        h_val = float(eff_health) / 100.0 if float(eff_health) > 1.0 else float(eff_health)
+        h_val = float(raw_health) / 100.0 if float(raw_health) > 1.0 else float(raw_health)
         health_deficit = max(0.0, min(1.0, 1.0 - h_val))
     else:
         health_deficit = 0.0
@@ -80,16 +81,17 @@ def extract_features(
     agent_component_agreement = None
 
     if isinstance(p3_conf, dict):
-        if "agent_valid_ratio" in p3_conf:
+        if "agent_valid_ratio" in p3_conf and p3_conf["agent_valid_ratio"] is not None:
             agent_valid_ratio = float(p3_conf["agent_valid_ratio"])
-        if "agreement_ratio" in p3_conf:
+        if "agreement_ratio" in p3_conf and p3_conf["agreement_ratio"] is not None:
             agent_component_agreement = float(p3_conf["agreement_ratio"])
-        elif "component_agreement" in p3_conf:
+        elif "component_agreement" in p3_conf and p3_conf["component_agreement"] is not None:
             agent_component_agreement = float(p3_conf["component_agreement"])
 
-    has_agent_agreement = agent_component_agreement is not None
-    has_attestation_history = attestation_history_rate is not None
-    has_verification_history = prior_verification_rate is not None
+    has_agent_valid_ratio = 1.0 if agent_valid_ratio is not None else 0.0
+    has_agent_agreement = 1.0 if agent_component_agreement is not None else 0.0
+    has_attestation_history = 1.0 if attestation_history_rate is not None else 0.0
+    has_verification_history = 1.0 if prior_verification_rate is not None else 0.0
 
     # Construct truthful features dictionary
     features_dict = {
@@ -97,18 +99,22 @@ def extract_features(
         "phase3_confidence": conf_score,
         "evidence_count_capped": min(ev_count, 10) / 10.0,
         "agent_valid_ratio": agent_valid_ratio,
+        "has_agent_valid_ratio": bool(has_agent_valid_ratio),
         "agent_component_agreement": agent_component_agreement,
-        "has_agent_agreement": has_agent_agreement,
-        "has_attestation_history": has_attestation_history,
-        "has_verification_history": has_verification_history,
+        "has_agent_agreement": bool(has_agent_agreement),
+        "has_health_score": bool(has_health_score),
+        "has_occurrence_count": bool(has_occurrence_count),
+        "has_severity": bool(has_severity),
+        "has_attestation_history": bool(has_attestation_history),
+        "has_verification_history": bool(has_verification_history),
         "safety_violation": 1.0 if safety_violation else 0.0,
         "requires_human_approval": 1.0 if requires_human_app else 0.0,
         "mvp_supported": mvp_supported,
         "is_observe_mode": is_observe,
         "is_mutative_mode": is_mutative,
-        "severity_normalized": severity_norm,
-        "health_deficit": health_deficit,
-        "log_occurrence_scaled": log_occ_scaled,
+        "severity_normalized": severity_norm if raw_sev is not None else None,
+        "health_deficit": health_deficit if raw_health is not None else None,
+        "log_occurrence_scaled": log_occ_scaled if raw_occ is not None else None,
         "history_sample_size_scaled": hist_sample_scaled,
         "beta_execution_lower_bound": float(beta_lower_bound),
         "target_attestation_history_rate": attestation_history_rate,
@@ -120,24 +126,31 @@ def extract_features(
         "execution_tier": exec_tier
     }
 
-    # Deterministic vector construction (16 numerical + 28 categorical = 44 elements)
+    # Deterministic vector construction (23 numerical + 28 categorical = 51 elements)
     vector = [
         conf_score,
         min(ev_count, 10) / 10.0,
         float(agent_valid_ratio) if agent_valid_ratio is not None else 0.0,
+        has_agent_valid_ratio,
         float(agent_component_agreement) if agent_component_agreement is not None else 0.0,
+        has_agent_agreement,
         1.0 if safety_violation else 0.0,
         1.0 if requires_human_app else 0.0,
         mvp_supported,
         is_observe,
         is_mutative,
         severity_norm,
+        has_severity,
         health_deficit,
+        has_health_score,
         log_occ_scaled,
+        has_occurrence_count,
         hist_sample_scaled,
         float(beta_lower_bound),
         float(attestation_history_rate) if attestation_history_rate is not None else 0.0,
-        float(prior_verification_rate) if prior_verification_rate is not None else 0.0
+        has_attestation_history,
+        float(prior_verification_rate) if prior_verification_rate is not None else 0.0,
+        has_verification_history
     ]
 
     vector.extend(_one_hot(intent_type, CATEGORICAL_VOCAB["capabilities"]))
@@ -151,4 +164,3 @@ def extract_features(
     feature_hash = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
 
     return features_dict, vector, feature_hash
-
