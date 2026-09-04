@@ -51,6 +51,7 @@ from shared.event_publisher import EventPublisher
 from shared.telemetry import emit_log_event, emit_metric_event
 from shared.action_registry import get_policy_action_for_intent, get_capability_for_policy_action
 from rl_engine.feedback import build_rl_feedback_payload
+from transport.report_indexer import update_report_index
 
 logger = logging.getLogger(__name__)
 
@@ -635,6 +636,19 @@ class Laptop2ProcessingWorker:
             report_path=report_path,
             report_hash=computed_report_hash
         )
+
+        # Update stable runtime index pointers (runtime/report_index.json & runtime/latest_phase34_report.json)
+        try:
+            update_report_index(
+                incident_id=incident_id,
+                correlation_id=correlation_id,
+                report_path=report_path,
+                final_outcome=final_outcome,
+                report_data=report_data,
+                events_path=summary_dict.get("events_report")
+            )
+        except Exception as idx_err:
+            logger.warning(f"Could not update runtime report index: {idx_err}")
 
         # Step 5: Publish sequential lifecycle events
         # 5a. autosre.phase3.debate.v1

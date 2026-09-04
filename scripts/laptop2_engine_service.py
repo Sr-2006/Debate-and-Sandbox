@@ -3,14 +3,18 @@
 Laptop 2 Always-Hot Supervisor Engine Service.
 
 Continuously supervises:
-  1. laptop2_incident_receiver.py
-  2. laptop2_processing_worker.py
+  1. Docker Engine
+  2. Shadow Sandbox Stack (shadow-postgres-db, shadow-redis, shadow-rabbitmq, etc.)
+  3. Ollama LLM Daemon (qwen2.5:3b)
+  4. laptop2_incident_receiver.py
+  5. laptop2_processing_worker.py
+  6. NATS JetStream connectivity & Heartbeat publication
 
-Features:
-  - Automatic restart on unexpected process exit.
-  - Heartbeat publication to autosre.system.laptop2.heartbeat.v1 every 5 seconds.
-  - Health state monitoring: STARTING, IDLE, PROCESSING, DEGRADED.
-  - Cross-incident persistence: remains alive indefinitely.
+Safety Guarantees:
+  - Never runs destructive recovery (`docker compose down -v` is strictly forbidden).
+  - Uses non-destructive recovery (`docker compose ... up -d` only).
+  - Avoids spawning duplicate Ollama / receiver / worker processes.
+  - Heartbeat emitted every 5 seconds to `autosre.system.laptop2.heartbeat.v1`.
 """
 
 import argparse
@@ -23,6 +27,8 @@ import sqlite3
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
@@ -49,10 +55,11 @@ DEFAULT_NATS_URL = os.environ.get("AUTOSRE_NATS_URL", "nats://172.51.154.253:422
 DEFAULT_STATE_DB = "runtime/transport.db"
 DEFAULT_LOCK_FILE = "runtime/laptop2_engine_service.lock"
 HEARTBEAT_INTERVAL_SECONDS = 5.0
+PREREQUISITE_CHECK_INTERVAL_SECONDS = 10.0
 
 
 class Laptop2EngineSupervisor:
-    """Supervises Laptop 2 incident receiver and processing worker processes with heartbeat emission."""
+    """Supervises prerequisites, receiver, and worker processes with continuous heartbeat publication."""
 
     def __init__(
         self,
@@ -74,8 +81,15 @@ class Laptop2EngineSupervisor:
         self.js = None
         self.receiver_proc: Optional[subprocess.Popen] = None
         self.worker_proc: Optional[subprocess.Popen] = None
+        self.ollama_proc: Optional[subprocess.Popen] = None
         self.running = False
         self.lock_fp = None
+
+        # Cached prerequisite statuses
+        self.docker_status = "UNKNOWN"
+        self.shadow_status = "UNKNOWN"
+        self.ollama_status = "UNKNOWN"
+        self.last_prereq_check_time = 0.0
 
     def acquire_lock(self) -> bool:
         """Ensures singleton execution of the supervisor service."""
@@ -117,7 +131,7 @@ class Laptop2EngineSupervisor:
             self.lock_fp = None
 
     def kill_existing_orphans(self):
-        """Terminates any existing receiver or worker processes before spawning managed instances."""
+        """Terminates any orphan receiver or worker processes before spawning managed instances."""
         if sys.platform == "win32":
             try:
                 cmd = (
@@ -129,6 +143,132 @@ class Laptop2EngineSupervisor:
                 subprocess.run(["powershell", "-Command", cmd], capture_output=True, timeout=5)
             except Exception as e:
                 logger.warning(f"Could not scan orphan processes: {e}")
+
+    # -------------------------------------------------------------------------
+    # Prerequisite Supervision (Docker, Shadow Sandbox, Ollama)
+    # -------------------------------------------------------------------------
+
+    def check_docker_engine(self) -> Tuple[bool, str]:
+        """Checks if Docker daemon is running and reachable."""
+        try:
+            res = subprocess.run(
+                ["docker", "version", "--format", "{{.Server.Version}}"],
+                capture_output=True,
+                text=True,
+                timeout=3.0,
+                check=False
+            )
+            if res.returncode == 0:
+                return True, "RUNNING"
+            return False, "UNREACHABLE"
+        except Exception as e:
+            return False, f"ERROR: {e}"
+
+    def check_and_maintain_shadow_stack(self) -> Tuple[bool, str]:
+        """
+        Checks health of shadow-postgres-db. If down, recovers using non-destructive
+        `docker compose up -d` without touching volumes.
+        """
+        try:
+            res = subprocess.run(
+                ["docker", "inspect", "shadow-postgres-db", "--format", "{{.State.Status}}"],
+                capture_output=True,
+                text=True,
+                timeout=3.0,
+                check=False
+            )
+            status = (res.stdout or "").strip().lower()
+            if status == "running":
+                return True, "RUNNING"
+        except Exception:
+            status = "missing"
+
+        # If not running, perform gentle recovery (NEVER docker compose down -v)
+        logger.warning(f"Shadow target shadow-postgres-db is not running ({status}). Recovering via docker compose up -d (volumes preserved)...")
+        try:
+            compose_file = os.path.join(REPO_ROOT, "Arse_shadow", "shadow_sandbox", "clone", "docker-compose.shadow.yml")
+            env_file = os.path.join(REPO_ROOT, "Arse_shadow", "shadow_sandbox", "clone", "env.shadow")
+            cmd = ["docker", "compose", "-f", compose_file, "--env-file", env_file, "up", "-d"]
+            up_res = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, timeout=30.0, check=False)
+            if up_res.returncode == 0:
+                logger.info("Shadow stack recovered successfully.")
+                return True, "RECOVERED"
+            logger.error(f"Shadow stack recovery failed: {up_res.stderr[:300]}")
+            return False, "RECOVERY_FAILED"
+        except Exception as e:
+            logger.error(f"Failed recovering shadow stack: {e}")
+            return False, "RECOVERY_ERROR"
+
+    def is_ollama_process_running(self) -> bool:
+        """Checks if an Ollama process is currently active."""
+        if sys.platform == "win32":
+            try:
+                res = subprocess.run(
+                    ["tasklist", "/FI", "IMAGENAME eq ollama.exe"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3.0,
+                    check=False
+                )
+                return "ollama.exe" in (res.stdout or "").lower()
+            except Exception:
+                return False
+        return False
+
+    def check_and_maintain_ollama(self) -> Tuple[bool, str]:
+        """
+        Checks if Ollama HTTP API is responding and qwen2.5:3b is available.
+        Spawns `ollama serve` if down, avoiding duplicate processes.
+        """
+        url = "http://127.0.0.1:11434/api/tags"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "AutoSRE-Supervisor/1.0"})
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    models = [m.get("name", "").lower() for m in data.get("models", [])]
+                    has_model = any("qwen2.5:3b" in m for m in models)
+                    if has_model:
+                        return True, "RUNNING"
+                    return False, "MODEL_MISSING"
+        except Exception:
+            pass
+
+        # If Ollama is not responding, launch ollama serve if not already running
+        if not self.is_ollama_process_running():
+            logger.warning("Ollama API unavailable and ollama.exe not detected. Starting ollama serve...")
+            try:
+                flags = 0
+                if sys.platform == "win32":
+                    flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+                self.ollama_proc = subprocess.Popen(
+                    ["ollama", "serve"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=flags
+                )
+                logger.info("Spawned background ollama serve process.")
+                return False, "STARTING"
+            except Exception as e:
+                logger.error(f"Failed spawning ollama serve: {e}")
+                return False, f"START_FAILED: {e}"
+        else:
+            return False, "WARMING_UP"
+
+    def maintain_prerequisites(self):
+        """Runs maintenance check across all prerequisites."""
+        is_docker_ok, self.docker_status = self.check_docker_engine()
+        if is_docker_ok:
+            _, self.shadow_status = self.check_and_maintain_shadow_stack()
+        else:
+            self.shadow_status = "DOCKER_DOWN"
+
+        _, self.ollama_status = self.check_and_maintain_ollama()
+        self.last_prereq_check_time = time.time()
+
+    # -------------------------------------------------------------------------
+    # Process Supervision (Receiver + Worker)
+    # -------------------------------------------------------------------------
 
     def start_receiver(self):
         """Starts the laptop2_incident_receiver subprocess."""
@@ -210,6 +350,10 @@ class Laptop2EngineSupervisor:
         """Determines aggregate system state: STARTING, IDLE, PROCESSING, DEGRADED."""
         if receiver_status != "RUNNING" or worker_status != "RUNNING":
             return "DEGRADED"
+        if self.docker_status not in ["RUNNING", "UNKNOWN"] or self.shadow_status not in ["RUNNING", "RECOVERED", "UNKNOWN"]:
+            return "DEGRADED"
+        if self.ollama_status not in ["RUNNING", "UNKNOWN"]:
+            return "DEGRADED"
         db_state = self.get_database_processing_state()
         return "PROCESSING" if db_state == "PROCESSING" else "IDLE"
 
@@ -234,6 +378,9 @@ class Laptop2EngineSupervisor:
             "engine": "laptop2",
             "receiver_status": receiver_status,
             "worker_status": worker_status,
+            "docker_status": self.docker_status,
+            "shadow_status": self.shadow_status,
+            "ollama_status": self.ollama_status,
             "state": state,
             "git_sha": get_git_commit_sha(),
             "timestamp": datetime.now(timezone.utc).isoformat()
@@ -267,7 +414,12 @@ class Laptop2EngineSupervisor:
         self.running = True
         self.kill_existing_orphans()
 
-        # Initial startup
+        # Initial prerequisite maintenance
+        logger.info("Running initial prerequisite check...")
+        self.maintain_prerequisites()
+        logger.info(f"Prerequisites: Docker={self.docker_status}, Shadow={self.shadow_status}, Ollama={self.ollama_status}")
+
+        # Initial subprocess startup
         self.start_receiver()
         self.start_worker()
 
@@ -278,10 +430,16 @@ class Laptop2EngineSupervisor:
 
         try:
             while self.running:
+                now = time.time()
+
+                # Periodic non-blocking prerequisite maintenance
+                if now - self.last_prereq_check_time >= PREREQUISITE_CHECK_INTERVAL_SECONDS:
+                    self.maintain_prerequisites()
+
+                # Process health checks
                 receiver_status, worker_status = self.check_and_supervise_subprocesses()
                 current_state = self.compute_supervisor_state(receiver_status, worker_status)
 
-                now = time.time()
                 if now - last_heartbeat_time >= self.heartbeat_interval:
                     await self.publish_heartbeat(receiver_status, worker_status, current_state)
                     last_heartbeat_time = now
