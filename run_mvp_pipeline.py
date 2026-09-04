@@ -1423,6 +1423,7 @@ def main():
     parser.add_argument("--input", type=str, default=None, help="Path to input problem JSON file or problems directory")
     parser.add_argument("--all", action="store_true", help="Run all 22 cases in problems directory")
     parser.add_argument("--reports-dir", type=str, default=None, help="Custom base output directory for reports")
+    parser.add_argument("--json-summary", action="store_true", help="Print structured machine-readable result JSON to stdout")
 
     args = parser.parse_args()
     problems_dir = os.path.join(BASE_DIR, "problems")
@@ -1456,13 +1457,22 @@ def main():
         print(f"  Crashes         : {len(crashes)}")
         print(f"=======================================================\n")
 
+        if args.json_summary:
+            print("\n[PIPELINE_RESULT_JSON]")
+            print(json.dumps({"verification_run_id": verification_run_id, "results": results, "crashes": crashes}, indent=2))
+            print("[/PIPELINE_RESULT_JSON]\n")
+
         if crashes:
             sys.exit(1)
         sys.exit(0)
 
     elif args.input:
         try:
-            run_single_problem(args.input, reports_base_dir=args.reports_dir)
+            res = run_single_problem(args.input, reports_base_dir=args.reports_dir)
+            if args.json_summary:
+                print("\n[PIPELINE_RESULT_JSON]")
+                print(json.dumps(res, indent=2))
+                print("[/PIPELINE_RESULT_JSON]\n")
             sys.exit(0)
         except Exception as e:
             print(f"Pipeline Execution Error: {e}")
@@ -1471,7 +1481,11 @@ def main():
         default_file = os.path.join(problems_dir, "case_01.json")
         if not os.path.exists(default_file):
             default_file = os.path.join(BASE_DIR, "debate", "input", "case_01_semantic_consensus.json")
-        run_single_problem(default_file, reports_base_dir=args.reports_dir)
+        res = run_single_problem(default_file, reports_base_dir=args.reports_dir)
+        if args.json_summary:
+            print("\n[PIPELINE_RESULT_JSON]")
+            print(json.dumps(res, indent=2))
+            print("[/PIPELINE_RESULT_JSON]\n")
         sys.exit(0)
 
 

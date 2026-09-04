@@ -85,21 +85,35 @@ def test_same_event_id_redelivery_suppressed(test_environment, make_event):
     assert path2 == path1
 
 
-def test_semantic_duplicate_suppressed(test_environment, make_event):
-    """Verify CASE C: different event_id with identical incident_id + payload_hash is suppressed."""
+def test_semantic_duplicate_creates_exact_staged_envelope(test_environment, make_event):
+    """Verify CASE C: different event_id with identical incident_id + payload_hash creates a dedicated staged envelope preserving provenance."""
     receiver, db_path, staging_dir = test_environment
     event1 = make_event("evt_orig", "case_dup", extra_marker="same")
     event2 = make_event("evt_new_id", "case_dup", extra_marker="same")
 
     success1, status1, path1, _ = receiver.process_event_payload(event1)
     assert status1 == "STAGED"
+    assert os.path.exists(path1)
 
     # Second event has different event_id but identical payload hash
     success2, status2, path2, _ = receiver.process_event_payload(event2)
     assert success2 is True
     assert status2 == "SEMANTIC_DUPLICATE_STAGED"
-    assert path2 == path1
-    assert not os.path.exists(os.path.join(staging_dir, "evt_new_id.json"))
+    assert path2 != path1
+    assert os.path.exists(path2)
+    assert os.path.exists(os.path.join(staging_dir, "evt_new_id.json"))
+
+    # Verify new staged file preserves new provenance
+    with open(path2, "r", encoding="utf-8") as f:
+        staged_data = json.load(f)
+    assert staged_data["event_id"] == "evt_new_id"
+    assert staged_data["correlation_id"] == "corr_evt_new_id"
+
+    # Verify received_events stores the new input_path
+    stored2 = receiver.dedup_store.get_event("evt_new_id")
+    assert stored2["input_path"] == path2
+    assert stored2["status"] == EventStatus.STAGED.value
+
 
 
 def test_changed_payload_hash_creates_new_staged_case(test_environment, make_event):

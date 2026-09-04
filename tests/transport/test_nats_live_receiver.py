@@ -105,12 +105,15 @@ def test_live_nats_jetstream_receiver_flow():
             assert summary["event_id"] == event_id
             assert summary["incident_id"] == incident_id
 
-            # 3. Verify staged file on disk contains exactly six canonical blocks
+            # 3. Verify staged envelope on disk contains event metadata and six canonical blocks
             staged_path = summary["staged_path"]
             assert os.path.isfile(staged_path)
             with open(staged_path, "r", encoding="utf-8") as f:
                 staged_json = json.load(f)
-            assert set(staged_json.keys()) == {
+            assert staged_json["event_id"] == event_id
+            assert staged_json["correlation_id"] == "corr_live_stage_a_001"
+            assert staged_json["incident_id"] == incident_id
+            assert set(staged_json["payload"].keys()) == {
                 "system_context",
                 "incident_event",
                 "infrastructure_topology",
@@ -118,7 +121,7 @@ def test_live_nats_jetstream_receiver_flow():
                 "telemetry_evidence",
                 "injected_chaos_context"
             }
-            assert staged_json["incident_event"]["incident_id"] == incident_id
+            assert staged_json["payload"]["incident_event"]["incident_id"] == incident_id
 
             # 4. Verify SQLite DB state
             record = receiver.dedup_store.get_event(event_id)

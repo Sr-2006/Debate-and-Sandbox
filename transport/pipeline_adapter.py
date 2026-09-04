@@ -23,7 +23,9 @@ def normalize_for_pipeline(problem: Dict[str, Any]) -> Dict[str, Any]:
 
     normalized = copy.deepcopy(problem)
 
-    health_status = normalized.get("service_health_status")
+    target = normalized.get("payload") if ("payload" in normalized and isinstance(normalized["payload"], dict)) else normalized
+
+    health_status = target.get("service_health_status")
     if isinstance(health_status, dict):
         dep_states = health_status.get("dependency_states")
         if isinstance(dep_states, dict):
@@ -43,4 +45,4 @@ def normalize_for_pipeline(problem: Dict[str, Any]) -> Dict[str, Any]:
                     }
             health_status["dependency_states"] = normalized_deps
 
-    return normalized
+    return target

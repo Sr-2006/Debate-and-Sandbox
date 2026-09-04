@@ -3,6 +3,7 @@
 from transport.contracts import (
     CANONICAL_BLOCKS,
     EventStatus,
+    ProcessingStatus,
     TransportReasonCode,
     TransportReceipt,
     ValidationResult,
@@ -24,10 +25,12 @@ from transport.result_publisher import (
     validate_completed_event,
     Laptop2ResultPublisher,
 )
+from transport.processing_worker import Laptop2ProcessingWorker
 
 __all__ = [
     "CANONICAL_BLOCKS",
     "EventStatus",
+    "ProcessingStatus",
     "TransportReasonCode",
     "TransportReceipt",
     "ValidationResult",
@@ -42,4 +45,5 @@ __all__ = [
     "build_phase34_completed_event",
     "validate_completed_event",
     "Laptop2ResultPublisher",
+    "Laptop2ProcessingWorker",
 ]

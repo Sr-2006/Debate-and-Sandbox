@@ -52,12 +52,35 @@ def stage_payload_atomically(
     target_path = os.path.abspath(os.path.join(input_dir, f"{event_id}.json"))
     tmp_path = target_path + ".tmp"
 
-    # Strict subset: exactly the 6 canonical blocks
     staged_content = {
         block: payload[block] for block in CANONICAL_BLOCKS if block in payload
     }
-
     content_str = json.dumps(staged_content, indent=2, ensure_ascii=False)
+
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        f.write(content_str)
+        f.flush()
+        os.fsync(f.fileno())
+
+    os.replace(tmp_path, target_path)
+    return target_path
+
+
+def stage_event_atomically(
+    event: Dict[str, Any],
+    input_dir: str = DEFAULT_INPUT_DIR
+) -> str:
+    """
+    Atomically writes the exact incoming transport event envelope into:
+    <input_dir>/<event_id>.json
+    Returns the absolute path to the staged file.
+    """
+    event_id = event.get("event_id") or "event_unknown"
+    os.makedirs(input_dir, exist_ok=True)
+    target_path = os.path.abspath(os.path.join(input_dir, f"{event_id}.json"))
+    tmp_path = target_path + ".tmp"
+
+    content_str = json.dumps(event, indent=2, ensure_ascii=False)
 
     with open(tmp_path, "w", encoding="utf-8") as f:
         f.write(content_str)
@@ -123,11 +146,15 @@ class Laptop2IncidentReceiver:
         if incident_id != "unknown" and payload_hash != "unknown":
             existing_semantic = self.dedup_store.find_payload(incident_id, payload_hash)
             if existing_semantic and existing_semantic.get("status") == EventStatus.STAGED.value:
-                # CASE C: Semantic duplicate -> ACK, do not create duplicate file
+                # CASE C: Semantic duplicate -> create an immutable staged envelope for the new event
                 if event_id and not self.dedup_store.has_event(event_id):
                     self.dedup_store.record_received(event_id, incident_id, payload_hash, correlation_id)
-                    self.dedup_store.mark_staged(event_id, existing_semantic.get("input_path", ""))
-                return True, "SEMANTIC_DUPLICATE_STAGED", existing_semantic.get("input_path"), None
+                    staged_path = stage_event_atomically(event, self.input_dir)
+                    self.dedup_store.mark_staged(event_id, staged_path)
+                    return True, "SEMANTIC_DUPLICATE_STAGED", staged_path, None
+                elif event_id:
+                    existing_ev = self.dedup_store.get_event(event_id)
+                    return True, "SEMANTIC_DUPLICATE_STAGED", existing_ev.get("input_path"), None
 
         # Record initial receipt in state store
         if event_id:
@@ -144,9 +171,9 @@ class Laptop2IncidentReceiver:
         if event_id:
             self.dedup_store.mark_validated(event_id)
 
-        # Atomically stage the payload
+        # Atomically stage the payload/envelope
         try:
-            staged_path = stage_payload_atomically(payload, event_id, self.input_dir)
+            staged_path = stage_event_atomically(event, self.input_dir)
             self.dedup_store.mark_staged(event_id, staged_path)
             return True, "STAGED", staged_path, val_res
         except Exception as e:

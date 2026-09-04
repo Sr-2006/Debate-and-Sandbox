@@ -33,6 +33,14 @@ class EventStatus(str, Enum):
     FAILED = "FAILED"
 
 
+class ProcessingStatus(str, Enum):
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    PIPELINE_SUCCEEDED = "PIPELINE_SUCCEEDED"
+    RESULT_PUBLISHED = "RESULT_PUBLISHED"
+    FAILED = "FAILED"
+
+
 @dataclass(frozen=True)
 class ValidationResult:
     is_valid: bool

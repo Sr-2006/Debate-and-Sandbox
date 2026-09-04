@@ -1,13 +1,13 @@
-"""SQLite-backed persistent deduplication store for cross-laptop transport events."""
+"""SQLite-backed persistent deduplication and processing store for cross-laptop transport events."""
 
 import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, Optional, Iterator
+from typing import Dict, Any, Optional, Iterator, List
 
-from transport.contracts import EventStatus
+from transport.contracts import EventStatus, ProcessingStatus
 
 
 def _now_iso() -> str:
@@ -15,7 +15,7 @@ def _now_iso() -> str:
 
 
 class DedupStore:
-    """Manages transactional state and deduplication tracking for inbound transport events."""
+    """Manages transactional state, deduplication tracking, and incident processing for transport events."""
 
     def __init__(self, db_path: str = "runtime/transport.db"):
         self.db_path = db_path
@@ -81,6 +81,35 @@ class DedupStore:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_published_semantic
                 ON published_results (parent_event_id, report_hash, event_type);
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS incident_processing (
+                    parent_event_id TEXT PRIMARY KEY,
+                    correlation_id TEXT NOT NULL,
+                    incident_id TEXT NOT NULL,
+                    input_path TEXT NOT NULL,
+                    input_payload_hash TEXT NOT NULL,
+                    processing_status TEXT NOT NULL,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    claimed_at TEXT,
+                    started_at TEXT,
+                    completed_at TEXT,
+                    failed_at TEXT,
+                    pipeline_run_id TEXT,
+                    report_path TEXT,
+                    report_hash TEXT,
+                    result_event_id TEXT,
+                    last_error_code TEXT,
+                    last_error_message TEXT
+                );
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_proc_status
+                ON incident_processing (processing_status);
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_proc_incident
+                ON incident_processing (incident_id);
             """)
             conn.commit()
 
@@ -258,3 +287,237 @@ class DedupStore:
             )
             row = cursor.fetchone()
             return dict(row) if row else None
+
+    def claim_staged_event(
+        self,
+        parent_event_id: Optional[str] = None,
+        retry_failed: bool = False,
+        recover_stale: bool = False,
+        stale_timeout_seconds: float = 3600.0
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Atomically claims a STAGED incident event for processing.
+        Returns a dict describing the claim outcome and candidate details.
+        """
+        now = _now_iso()
+        with self._connection() as conn:
+            conn.execute("BEGIN IMMEDIATE;")
+
+            # 1. Identify candidate STAGED event from received_events
+            if parent_event_id:
+                cursor = conn.execute(
+                    "SELECT * FROM received_events WHERE event_id = ? AND status = ? LIMIT 1;",
+                    (parent_event_id, EventStatus.STAGED.value)
+                )
+                rec_row = cursor.fetchone()
+                if not rec_row:
+                    conn.execute("COMMIT;")
+                    return None
+                candidate = dict(rec_row)
+            else:
+                # Find oldest STAGED event not yet completed
+                cursor = conn.execute(
+                    """
+                    SELECT r.* FROM received_events r
+                    LEFT JOIN incident_processing p ON r.event_id = p.parent_event_id
+                    WHERE r.status = ?
+                      AND (
+                          p.processing_status IS NULL
+                          OR p.processing_status = 'PENDING'
+                          OR (? = 1 AND p.processing_status = 'FAILED')
+                          OR (? = 1 AND p.processing_status = 'PROCESSING')
+                      )
+                    ORDER BY r.rowid ASC LIMIT 1;
+                    """,
+                    (EventStatus.STAGED.value, 1 if retry_failed else 0, 1 if recover_stale else 0)
+                )
+                rec_row = cursor.fetchone()
+                if not rec_row:
+                    conn.execute("COMMIT;")
+                    return None
+                candidate = dict(rec_row)
+
+            event_id = candidate["event_id"]
+
+            # 2. Check existing incident_processing entry
+            cursor = conn.execute(
+                "SELECT * FROM incident_processing WHERE parent_event_id = ? LIMIT 1;",
+                (event_id,)
+            )
+            proc_row = cursor.fetchone()
+
+            if proc_row:
+                current_status = proc_row["processing_status"]
+                attempt_count = proc_row["attempt_count"] or 0
+
+                if current_status == "RESULT_PUBLISHED":
+                    conn.execute("COMMIT;")
+                    return {
+                        "status": "ALREADY_COMPLETED",
+                        "parent_event_id": event_id,
+                        "record": dict(proc_row)
+                    }
+
+                if current_status == "PROCESSING":
+                    # Check if stale
+                    is_stale = recover_stale
+                    if not is_stale and proc_row["claimed_at"]:
+                        try:
+                            claimed_dt = datetime.fromisoformat(proc_row["claimed_at"].replace("Z", "+00:00"))
+                            now_dt = datetime.now(timezone.utc)
+                            if (now_dt - claimed_dt).total_seconds() > stale_timeout_seconds:
+                                is_stale = True
+                        except Exception:
+                            pass
+
+                    if not is_stale:
+                        conn.execute("COMMIT;")
+                        return {
+                            "status": "ALREADY_CLAIMED",
+                            "parent_event_id": event_id,
+                            "record": dict(proc_row)
+                        }
+
+                if current_status == "FAILED" and not retry_failed:
+                    conn.execute("COMMIT;")
+                    return {
+                        "status": "FAILED_REQUIRES_RETRY",
+                        "parent_event_id": event_id,
+                        "record": dict(proc_row)
+                    }
+
+                # Transition existing row to PROCESSING
+                conn.execute(
+                    """
+                    UPDATE incident_processing
+                    SET processing_status = 'PROCESSING',
+                        attempt_count = attempt_count + 1,
+                        claimed_at = ?,
+                        started_at = ?,
+                        last_error_code = NULL,
+                        last_error_message = NULL
+                    WHERE parent_event_id = ?;
+                    """,
+                    (now, now, event_id)
+                )
+                attempt_count += 1
+            else:
+                # Insert initial PROCESSING row
+                attempt_count = 1
+                conn.execute(
+                    """
+                    INSERT INTO incident_processing (
+                        parent_event_id, correlation_id, incident_id,
+                        input_path, input_payload_hash, processing_status,
+                        attempt_count, claimed_at, started_at
+                    ) VALUES (?, ?, ?, ?, ?, 'PROCESSING', 1, ?, ?);
+                    """,
+                    (
+                        event_id,
+                        candidate["correlation_id"],
+                        candidate["incident_id"],
+                        candidate["input_path"],
+                        candidate["payload_hash"],
+                        now,
+                        now
+                    )
+                )
+
+            conn.execute("COMMIT;")
+
+            return {
+                "status": "CLAIMED",
+                "parent_event_id": event_id,
+                "correlation_id": candidate["correlation_id"],
+                "incident_id": candidate["incident_id"],
+                "input_path": candidate["input_path"],
+                "input_payload_hash": candidate["payload_hash"],
+                "attempt_count": attempt_count,
+                "claimed_at": now
+            }
+
+    def mark_pipeline_succeeded(
+        self,
+        parent_event_id: str,
+        pipeline_run_id: str,
+        report_path: str,
+        report_hash: str
+    ) -> None:
+        """Transitions incident processing status to PIPELINE_SUCCEEDED."""
+        with self._connection() as conn:
+            conn.execute(
+                """
+                UPDATE incident_processing
+                SET processing_status = 'PIPELINE_SUCCEEDED',
+                    pipeline_run_id = ?,
+                    report_path = ?,
+                    report_hash = ?,
+                    last_error_code = NULL,
+                    last_error_message = NULL
+                WHERE parent_event_id = ?;
+                """,
+                (pipeline_run_id, report_path, report_hash, parent_event_id)
+            )
+            conn.commit()
+
+    def mark_result_published(
+        self,
+        parent_event_id: str,
+        result_event_id: str,
+        report_hash: str
+    ) -> None:
+        """Transitions incident processing status to RESULT_PUBLISHED."""
+        now = _now_iso()
+        with self._connection() as conn:
+            conn.execute(
+                """
+                UPDATE incident_processing
+                SET processing_status = 'RESULT_PUBLISHED',
+                    result_event_id = ?,
+                    report_hash = ?,
+                    completed_at = ?,
+                    last_error_code = NULL,
+                    last_error_message = NULL
+                WHERE parent_event_id = ?;
+                """,
+                (result_event_id, report_hash, now, parent_event_id)
+            )
+            conn.commit()
+
+    def mark_processing_failed(
+        self,
+        parent_event_id: str,
+        error_code: str,
+        error_message: str
+    ) -> None:
+        """Transitions incident processing status to FAILED with error context."""
+        now = _now_iso()
+        with self._connection() as conn:
+            conn.execute(
+                """
+                UPDATE incident_processing
+                SET processing_status = 'FAILED',
+                    last_error_code = ?,
+                    last_error_message = ?,
+                    failed_at = ?
+                WHERE parent_event_id = ?;
+                """,
+                (error_code, error_message, now, parent_event_id)
+            )
+            conn.commit()
+
+    def get_processing_state(self, parent_event_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieves current processing state record for parent_event_id."""
+        with self._connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM incident_processing WHERE parent_event_id = ? LIMIT 1;",
+                (parent_event_id,)
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def list_processing_states(self) -> List[Dict[str, Any]]:
+        """Lists all processing states."""
+        with self._connection() as conn:
+            cursor = conn.execute("SELECT * FROM incident_processing ORDER BY rowid ASC;")
+            return [dict(r) for r in cursor.fetchall()]
