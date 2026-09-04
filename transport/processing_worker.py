@@ -51,7 +51,7 @@ from shared.event_publisher import EventPublisher
 from shared.telemetry import emit_log_event, emit_metric_event
 from shared.action_registry import get_policy_action_for_intent, get_capability_for_policy_action
 from rl_engine.feedback import build_rl_feedback_payload
-from transport.report_indexer import update_report_index
+from transport.report_indexer import update_report_index, extract_targets
 
 logger = logging.getLogger(__name__)
 
@@ -629,6 +629,7 @@ class Laptop2ProcessingWorker:
         computed_report_hash = compute_report_hash(report_data)
         run_id = report_data.get("run", {}).get("verification_run_id") or summary_dict.get("verification_run_id") or "unknown_run"
         final_outcome = report_data.get("final_summary", {}).get("outcome") or summary_dict.get("outcome") or "UNKNOWN"
+        logical_target, physical_execution_target = extract_targets(report_data)
 
         self.dedup_store.mark_pipeline_succeeded(
             parent_event_id=event_id,
@@ -642,8 +643,13 @@ class Laptop2ProcessingWorker:
             update_report_index(
                 incident_id=incident_id,
                 correlation_id=correlation_id,
+                root_event_id=root_event_id,
+                parent_event_id=event_id,
                 report_path=report_path,
+                report_hash=computed_report_hash,
                 final_outcome=final_outcome,
+                logical_target=logical_target,
+                physical_execution_target=physical_execution_target,
                 report_data=report_data,
                 events_path=summary_dict.get("events_report")
             )
@@ -814,6 +820,8 @@ class Laptop2ProcessingWorker:
             payload={
                 "outcome": final_outcome,
                 "verification_run_id": run_id,
+                "logical_target": logical_target,
+                "physical_execution_target": physical_execution_target,
                 "phase4_summary": p4_data
             }
         )
@@ -858,7 +866,9 @@ class Laptop2ProcessingWorker:
                 "outcome": final_outcome,
                 "report_path": report_path,
                 "report_hash": computed_report_hash,
-                "pipeline_run_id": run_id
+                "pipeline_run_id": run_id,
+                "logical_target": logical_target,
+                "physical_execution_target": physical_execution_target
             },
             metrics={"duration_ms": report_data.get("final_summary", {}).get("total_duration_ms", 0.0)}
         )

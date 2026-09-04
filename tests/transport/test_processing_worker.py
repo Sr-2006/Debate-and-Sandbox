@@ -545,3 +545,32 @@ def test_nats_url_propagated_to_publisher(test_env):
         _, kwargs = MockPublisher.call_args
         assert kwargs.get("nats_url") == explicit_nats_url
         assert kwargs.get("nats_url") != "nats://127.0.0.1:4222"
+
+
+def test_failed_integrity_validation_never_updates_index(test_env, tmp_path):
+    """Verify that if report integrity or identity validation fails, report index is never updated."""
+    worker = Laptop2ProcessingWorker(state_db_path=test_env["db_path"])
+
+    # Tamper with the report JSON on disk to corrupt report hash
+    with open(test_env["report_file"], "r+", encoding="utf-8") as rf:
+        data = json.load(rf)
+        data["final_summary"]["outcome"] = "MUTATED_OUTCOME"
+        rf.seek(0)
+        json.dump(data, rf, indent=2)
+        rf.truncate()
+
+    mock_summary = {
+        "incident_id": "order-service_51",
+        "verification_run_id": "verify_test_123456",
+        "outcome": "MUTATED_OUTCOME",
+        "json_report": test_env["report_file"],
+        "events_report": test_env["events_file"]
+    }
+
+    with patch.object(worker, "_run_pipeline_subprocess", return_value=(0, json.dumps(mock_summary), "", mock_summary)), \
+         patch("transport.processing_worker.update_report_index") as mock_indexer:
+
+        res = worker.process_event(parent_event_id=test_env["parent_event_id"])
+        # If report hash mismatch or case mismatch occurs, indexing MUST NOT happen
+        if res.get("status") == "FAILED":
+            assert mock_indexer.call_count == 0

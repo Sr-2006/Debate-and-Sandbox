@@ -59,7 +59,6 @@ from rl_engine.episode_builder import build_learning_episode
 from rl_engine.episode_store import EpisodeStore
 from jsonschema import Draft7Validator
 from transport.pipeline_adapter import normalize_for_pipeline
-from transport.report_indexer import update_report_index
 
 
 def _get_commit_sha() -> str:
@@ -1401,21 +1400,6 @@ def run_single_problem(
     json_path, md_path = generate_phase34_report(canonical_context, reports_base_dir=reports_base_dir)
 
     final_outcome = summary_sec.get("outcome", "UNKNOWN")
-
-    # Update stable runtime index pointers (runtime/report_index.json & runtime/latest_phase34_report.json)
-    try:
-        corr_id = raw_problem.get("correlation_id") or problem_run_id
-        update_report_index(
-            incident_id=case_id,
-            correlation_id=corr_id,
-            report_path=json_path,
-            final_outcome=final_outcome,
-            report_data=canonical_context,
-            events_path=events_path
-        )
-    except Exception as idx_err:
-        pass
-
     print(f"\n[MVP COORDINATOR] Incident [{case_id}] complete!")
     print(f"  - Final Outcome : {final_outcome}")
     print(f"  - JSON Report   : {json_path}")
