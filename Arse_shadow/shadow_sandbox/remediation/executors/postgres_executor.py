@@ -37,8 +37,20 @@ class PostgresExecutor(BaseExecutor):
             if not re.match(r"^[a-zA-Z0-9_\.\-]+$", str_val):
                 return {"success": False, "target": shadow_target, "tool": action, "output": f"ERROR: Setting value '{str_val}' failed strict format validation"}
 
-            query = f"ALTER SYSTEM SET {setting} = '{str_val}'; SELECT pg_reload_conf();"
-            return self._run_sql(shadow_target, query, action)
+            # Execute ALTER SYSTEM and pg_reload_conf as separate statements outside transaction block with autocommit
+            cmd = [
+                "docker", "exec", shadow_target, "psql", "-U", "postgres",
+                "-c", f"ALTER SYSTEM SET {setting} = '{str_val}';",
+                "-c", "SELECT pg_reload_conf();"
+            ]
+            try:
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                if res.returncode == 0:
+                    return {"success": True, "target": shadow_target, "tool": action, "output": f"SUCCESS: {res.stdout.strip()}"}
+                else:
+                    return {"success": False, "target": shadow_target, "tool": action, "output": f"ERROR: {res.stderr.strip()}"}
+            except Exception as e:
+                return {"success": False, "target": shadow_target, "tool": action, "output": f"ERROR: Postgres SQL execution failed: {str(e)}"}
 
         elif action == "postgres.lock.diagnose":
             query = "SELECT blocking.pid AS blocking_pid, blocked.pid AS blocked_pid, blocked.query FROM pg_stat_activity blocked JOIN pg_locks blockeda ON blocked.pid = blockeda.pid JOIN pg_locks blockinga ON blockeda.locktype = blockinga.locktype AND blockeda.database IS NOT DISTINCT FROM blockinga.database AND blockeda.relation IS NOT DISTINCT FROM blockinga.relation AND blockeda.page IS NOT DISTINCT FROM blockinga.page AND blockeda.tuple IS NOT DISTINCT FROM blockinga.tuple AND blockeda.virtualxid IS NOT DISTINCT FROM blockinga.virtualxid AND blockeda.transactionid IS NOT DISTINCT FROM blockinga.transactionid AND blockeda.classid IS NOT DISTINCT FROM blockinga.classid AND blockeda.objid IS NOT DISTINCT FROM blockinga.objid AND blockeda.objsubid IS NOT DISTINCT FROM blockinga.objsubid AND blockeda.pid != blockinga.pid JOIN pg_stat_activity blocking ON blockinga.pid = blocking.pid WHERE NOT blockeda.granted;"

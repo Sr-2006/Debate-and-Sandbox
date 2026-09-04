@@ -18,6 +18,7 @@ from transport.nats_receiver import (
     Laptop2IncidentReceiver,
     stage_payload_atomically,
 )
+from transport.pipeline_adapter import normalize_for_pipeline
 
 __all__ = [
     "CANONICAL_BLOCKS",
@@ -32,4 +33,5 @@ __all__ = [
     "DedupStore",
     "Laptop2IncidentReceiver",
     "stage_payload_atomically",
+    "normalize_for_pipeline",
 ]

@@ -403,9 +403,16 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
     except Exception as e:
         after_obs = {"error": str(e)}
 
+    if isinstance(before_obs, dict):
+        before_obs["attempted"] = True
+    if isinstance(after_obs, dict):
+        after_obs["attempted"] = True
+
     # 6. Step 6: VERIFIED_OR_ROLLED_BACK
     sm.transition_to("VERIFIED_OR_ROLLED_BACK", ReasonCode.DIAGNOSED, "Verifying postconditions and executing rollback if needed")
     ver_res = verifier.verify(shadow_target, intent_type, parameters, exec_res)
+    if isinstance(ver_res, dict):
+        ver_res["attempted"] = True
     passed = bool(ver_res.get("passed", False))
 
     rollback_info = {"attempted": False, "result": None}
@@ -413,52 +420,76 @@ def run_phase4_pipeline(v2_envelope: Dict[str, Any], fault_spec: Optional[Dict[s
 
     if passed:
         final_status = "SIMULATION_VERIFIED" if simulated_flag else "SANDBOX_VERIFIED"
-
+        rollback_info = {
+            "attempted": False,
+            "status": "NOT_REQUIRED",
+            "reason_code": "NOT_REQUIRED",
+            "reason": "Verification passed; rollback not required",
+            "result": None
+        }
     else:
-        # Perform rollback to captured pre-state
-        rollback_info["attempted"] = True
-        rb_exec = {}
-        try:
-            if intent_type == "postgres.setting.update" and isinstance(pre_state_val, str):
-                s_name = parameters.get("setting_name")
-                rb_exec = executor.execute(shadow_target, intent_type, {"setting_name": s_name, "value": pre_state_val})
-            elif intent_type == "redis.eviction_policy.update" and isinstance(pre_state_val, str):
-                rb_exec = executor.execute(shadow_target, intent_type, {"policy": pre_state_val})
-            elif intent_type == "container.restart":
-                rb_exec = executor.execute(shadow_target, "container.restart", {})
-            else:
-                rb_exec = {"success": False, "reason": "No captured pre-state value available for rollback"}
-        except Exception as e:
-            rb_exec = {"success": False, "error": str(e)}
-
-        rollback_info["result"] = rb_exec
-
-        # Re-read post-rollback state and verify restoration against captured pre-state
-        post_rb_obs = {}
-        restored = False
-        try:
-            if intent_type == "postgres.setting.update" and isinstance(pre_state_val, str):
-                s_name = parameters.get("setting_name")
-                post_rb_obs = executor.execute(shadow_target, "postgres.setting.read", {"setting_name": s_name})
-                val = post_rb_obs.get("output", "").replace("SUCCESS: ", "").strip()
-                restored = (val == pre_state_val)
-            elif intent_type == "redis.eviction_policy.update" and isinstance(pre_state_val, str):
-                post_rb_obs = executor.execute(shadow_target, "redis.eviction_policy.read", {})
-                val = post_rb_obs.get("output", "").replace("SUCCESS: ", "").strip()
-                restored = (val == pre_state_val)
-            elif intent_type == "container.restart":
-                post_rb_obs = executor.inspect_container(shadow_target)
-                restored = rb_exec.get("success", False) and post_rb_obs.get("success", False)
-        except Exception:
-            restored = False
-
-        if rb_exec.get("success") and restored:
-            final_status = "SANDBOX_FAILED_ROLLED_BACK"
+        if not exec_res.get("success", False):
+            # Execution failed before mutation completed - no rollback required
+            rollback_info = {
+                "attempted": False,
+                "status": "NOT_REQUIRED",
+                "reason_code": "NOT_REQUIRED",
+                "reason": "Execution failed before state change; rollback not required",
+                "result": None
+            }
+            final_status = "SANDBOX_EXECUTION_FAILED" if not simulated_flag else "SIMULATION_EXECUTION_FAILED"
         else:
-            final_status = "SANDBOX_FAILED_ROLLBACK_FAILED"
+            # Execution succeeded but verification failed -> perform rollback to captured pre-state
+            rollback_info["attempted"] = True
+            rb_exec = {}
+            try:
+                if intent_type == "postgres.setting.update" and isinstance(pre_state_val, str):
+                    s_name = parameters.get("setting_name")
+                    rb_exec = executor.execute(shadow_target, intent_type, {"setting_name": s_name, "value": pre_state_val})
+                elif intent_type == "redis.eviction_policy.update" and isinstance(pre_state_val, str):
+                    rb_exec = executor.execute(shadow_target, intent_type, {"policy": pre_state_val})
+                elif intent_type == "container.restart":
+                    rb_exec = executor.execute(shadow_target, "container.restart", {})
+                else:
+                    rb_exec = {"success": False, "reason": "No captured pre-state value available for rollback"}
+            except Exception as e:
+                rb_exec = {"success": False, "error": str(e)}
+
+            rollback_info["result"] = rb_exec
+
+            # Re-read post-rollback state and verify restoration against captured pre-state
+            post_rb_obs = {}
+            restored = False
+            try:
+                if intent_type == "postgres.setting.update" and isinstance(pre_state_val, str):
+                    s_name = parameters.get("setting_name")
+                    post_rb_obs = executor.execute(shadow_target, "postgres.setting.read", {"setting_name": s_name})
+                    val = post_rb_obs.get("output", "").replace("SUCCESS: ", "").strip()
+                    restored = (val == pre_state_val)
+                elif intent_type == "redis.eviction_policy.update" and isinstance(pre_state_val, str):
+                    post_rb_obs = executor.execute(shadow_target, "redis.eviction_policy.read", {})
+                    val = post_rb_obs.get("output", "").replace("SUCCESS: ", "").strip()
+                    restored = (val == pre_state_val)
+                elif intent_type == "container.restart":
+                    post_rb_obs = executor.inspect_container(shadow_target)
+                    restored = rb_exec.get("success", False) and post_rb_obs.get("success", False)
+            except Exception:
+                restored = False
+
+            if rb_exec.get("success") and restored:
+                final_status = "SANDBOX_FAILED_ROLLED_BACK"
+            else:
+                final_status = "SANDBOX_FAILED_ROLLBACK_FAILED"
 
     # 7. Step 7: REPORTED
-    reported_reason = ReasonCode.VERIFIED_RECOVERED if final_status in ["SANDBOX_VERIFIED", "SIMULATION_VERIFIED"] else ReasonCode.VERIFICATION_FAILED_ROLLED_BACK
+    if final_status in ["SANDBOX_VERIFIED", "SIMULATION_VERIFIED"]:
+        reported_reason = ReasonCode.VERIFIED_RECOVERED
+    elif final_status in ["SANDBOX_EXECUTION_FAILED", "SIMULATION_EXECUTION_FAILED"]:
+        reported_reason = ReasonCode.EXECUTION_FAILED
+    elif final_status == "SANDBOX_FAILED_ROLLED_BACK":
+        reported_reason = ReasonCode.VERIFICATION_FAILED_ROLLED_BACK
+    else:
+        reported_reason = ReasonCode.VERIFICATION_FAILED_ROLLBACK_FAILED
     sm.transition_to("REPORTED", reported_reason, f"Phase 4 completed with status {final_status}")
 
 

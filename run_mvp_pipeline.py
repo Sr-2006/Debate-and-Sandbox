@@ -58,6 +58,7 @@ from rl_engine.advisor import RLAdvisor
 from rl_engine.episode_builder import build_learning_episode
 from rl_engine.episode_store import EpisodeStore
 from jsonschema import Draft7Validator
+from transport.pipeline_adapter import normalize_for_pipeline
 
 
 def _get_commit_sha() -> str:
@@ -888,9 +889,12 @@ def run_single_problem(
         details={}
     )
 
+    # Normalize problem for downstream pipeline consumers without mutating original input or file
+    normalized_problem = normalize_for_pipeline(raw_problem)
+
     # 3. Run DebateManager.run()
     dm = DebateManager()
-    p3_res = dm.run(raw_problem)
+    p3_res = dm.run(normalized_problem)
     sol = p3_res.get("solution", {})
     p3_status = str(p3_res.get("phase3_status") or "PHASE3_FAILED")
 
