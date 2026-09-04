@@ -37,18 +37,31 @@ def make_event():
         }
         payload_hash = compute_payload_sha256(payload)
         return {
-            "schema_version": "1.0",
-            "event_type": "autosre.incident.ready",
+            "schema_version": "1.0.0",
+            "event_type": "autosre.incident.ready.v1",
             "event_id": event_id,
+            "root_event_id": event_id,
+            "parent_event_id": None,
             "correlation_id": f"corr_{event_id}",
             "incident_id": incident_id,
+            "phase": "STAGE_A",
+            "component": "incident_engine",
+            "status": "READY",
+            "timestamp": "2026-09-04T00:00:00Z",
             "source": {
                 "engine": "laptop1",
+                "host": "laptop1",
+                "version": "1.0.0",
                 "dataset_version": None,
                 "git_sha": None,
                 "generated_at": None
             },
-            "transport": {"payload_sha256": payload_hash, "sent_at": "2026-09-04T00:00:00Z"},
+            "metrics": {},
+            "integrity": {
+                "payload_sha256": payload_hash,
+                "signature": None,
+                "commit_sha": None
+            },
             "payload": payload
         }
     return _builder
@@ -113,7 +126,6 @@ def test_semantic_duplicate_creates_exact_staged_envelope(test_environment, make
     stored2 = receiver.dedup_store.get_event("evt_new_id")
     assert stored2["input_path"] == path2
     assert stored2["status"] == EventStatus.STAGED.value
-
 
 
 def test_changed_payload_hash_creates_new_staged_case(test_environment, make_event):

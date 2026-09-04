@@ -1,4 +1,4 @@
-"""Tests for transport incident event receiver validation."""
+"""Tests for transport incident event receiver validation against canonical Stage A contracts."""
 
 import copy
 import pytest
@@ -40,47 +40,92 @@ def valid_event():
         },
         "injected_chaos_context": {
             "active_infrastructure_mutations": "RAM exhausted"
+        },
+        "laptop1_rl_advisory": {
+            "advisory_id": "adv_001",
+            "recommendation": "OBSERVE_FIRST"
+        },
+        "lineage_metadata": {
+            "origin": "laptop1_collector"
+        },
+        "phase1_summary": {
+            "status": "DETECTED"
+        },
+        "phase2_summary": {
+            "status": "TRIAGED"
         }
     }
 
     payload_hash = compute_payload_sha256(payload)
 
     return {
-        "schema_version": "1.0",
-        "event_type": "autosre.incident.ready",
+        "schema_version": "1.0.0",
+        "event_type": "autosre.incident.ready.v1",
         "event_id": "evt_test_1001",
+        "parent_event_id": None,
+        "root_event_id": "evt_test_1001",
         "correlation_id": "corr_test_1001",
         "incident_id": "case_test_01",
+        "phase": "STAGE_A",
+        "component": "incident_engine",
+        "status": "READY",
+        "timestamp": "2026-09-04T00:00:00Z",
         "source": {
             "engine": "laptop1",
+            "host": "laptop1",
+            "version": "1.0.0",
             "dataset_version": None,
             "git_sha": None,
             "generated_at": None
         },
-        "transport": {
+        "metrics": {},
+        "integrity": {
             "payload_sha256": payload_hash,
-            "sent_at": "2026-09-04T00:00:00Z",
-            "attempt": 1
+            "signature": None,
+            "commit_sha": None
         },
         "payload": payload
     }
 
 
-def test_valid_event_passes(valid_event):
-    """Verify that a fully conforming event passes validation."""
+def test_valid_canonical_event_passes(valid_event):
+    """Verify that a canonical Stage A autosre.incident.ready.v1 event passes validation."""
     result = validate_incident_event(valid_event)
     assert result.is_valid is True
     assert result.reason_code == TransportReasonCode.VALID
     assert result.errors == []
-    assert result.computed_hash == valid_event["transport"]["payload_sha256"]
+    assert result.computed_hash == valid_event["integrity"]["payload_sha256"]
+
+
+def test_live_style_event_shape_passes(valid_event):
+    """Verify exact live-style shape with all Stage A blocks and envelope metadata is accepted."""
+    event = copy.deepcopy(valid_event)
+    event["event_id"] = "evt_000ae537e54847e3b00c307fa632b19f"
+    event["correlation_id"] = "corr_251ba019509c4aef948753d1e218e364"
+    event["incident_id"] = "order-service_51"
+    event["payload"]["incident_event"]["incident_id"] = "order-service_51"
+    event["integrity"]["payload_sha256"] = compute_payload_sha256(event["payload"])
+
+    result = validate_incident_event(event)
+    assert result.is_valid is True
+    assert result.reason_code == TransportReasonCode.VALID
+
+
+def test_legacy_event_type_rejected(valid_event):
+    """Verify old pre-v1 autosre.incident.ready event type is strictly rejected."""
+    event = copy.deepcopy(valid_event)
+    event["event_type"] = "autosre.incident.ready"
+
+    result = validate_incident_event(event)
+    assert result.is_valid is False
+    assert result.reason_code == TransportReasonCode.REJECTED_SCHEMA
 
 
 def test_missing_canonical_block_fails(valid_event):
     """Verify that omitting any of the 6 canonical blocks triggers MISSING_CANONICAL_BLOCK."""
     event = copy.deepcopy(valid_event)
     del event["payload"]["injected_chaos_context"]
-    # Recompute declared hash so hash check doesn't shadow schema/block check
-    event["transport"]["payload_sha256"] = compute_payload_sha256(event["payload"])
+    event["integrity"]["payload_sha256"] = compute_payload_sha256(event["payload"])
 
     result = validate_incident_event(event)
     assert result.is_valid is False
@@ -101,7 +146,7 @@ def test_incident_id_mismatch_fails(valid_event):
 def test_invalid_payload_hash_fails(valid_event):
     """Verify corrupted or incorrect payload_sha256 triggers INVALID_PAYLOAD_HASH."""
     event = copy.deepcopy(valid_event)
-    event["transport"]["payload_sha256"] = "0" * 64
+    event["integrity"]["payload_sha256"] = "0" * 64
 
     result = validate_incident_event(event)
     assert result.is_valid is False
@@ -117,6 +162,17 @@ def test_invalid_source_engine_fails(valid_event):
     result = validate_incident_event(event)
     assert result.is_valid is False
     assert result.reason_code in (TransportReasonCode.INVALID_SOURCE_ENGINE, TransportReasonCode.REJECTED_SCHEMA)
+
+
+def test_unknown_extra_payload_field_rejected(valid_event):
+    """Verify unexpected fields inside payload are strictly rejected (fail-closed)."""
+    event = copy.deepcopy(valid_event)
+    event["payload"]["unauthorized_payload_data"] = {"malicious": True}
+    event["integrity"]["payload_sha256"] = compute_payload_sha256(event["payload"])
+
+    result = validate_incident_event(event)
+    assert result.is_valid is False
+    assert result.reason_code == TransportReasonCode.REJECTED_SCHEMA
 
 
 def test_immutability_during_validation(valid_event):

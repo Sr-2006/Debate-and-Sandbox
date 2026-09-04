@@ -1,29 +1,41 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "IncidentReadyV1",
-  "description": "SOURCE OF TRUTH: tcp_aum/shared/contracts/incident_ready_v1.schema.json (commit: fe9c6354a6d295f352a36faae165a07f37395db6). Contract for cross-laptop incident event delivery from Laptop1 to Laptop2.",
+  "description": "Canonical JSON Schema for autosre.incident.ready.v1 Stage A envelope delivered from Laptop 1 to Laptop 2.",
   "type": "object",
   "required": [
     "schema_version",
     "event_type",
     "event_id",
+    "root_event_id",
     "correlation_id",
     "incident_id",
+    "phase",
+    "component",
+    "status",
+    "timestamp",
     "source",
-    "transport",
+    "integrity",
     "payload"
   ],
   "additionalProperties": false,
   "properties": {
     "schema_version": {
       "type": "string",
-      "enum": ["1.0"]
+      "enum": ["1.0", "1.0.0"]
     },
     "event_type": {
       "type": "string",
-      "enum": ["autosre.incident.ready"]
+      "enum": ["autosre.incident.ready.v1"]
     },
     "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parent_event_id": {
+      "type": ["string", "null"]
+    },
+    "root_event_id": {
       "type": "string",
       "minLength": 1
     },
@@ -32,6 +44,22 @@
       "minLength": 1
     },
     "incident_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "phase": {
+      "type": "string",
+      "minLength": 1
+    },
+    "component": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
       "type": "string",
       "minLength": 1
     },
@@ -44,6 +72,12 @@
           "type": "string",
           "enum": ["laptop1"]
         },
+        "host": {
+          "type": ["string", "null"]
+        },
+        "version": {
+          "type": ["string", "null"]
+        },
         "dataset_version": {
           "type": ["string", "null"]
         },
@@ -55,7 +89,11 @@
         }
       }
     },
-    "transport": {
+    "metrics": {
+      "type": ["object", "null"],
+      "additionalProperties": true
+    },
+    "integrity": {
       "type": "object",
       "required": ["payload_sha256"],
       "additionalProperties": false,
@@ -64,12 +102,11 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
-        "sent_at": {
+        "signature": {
           "type": ["string", "null"]
         },
-        "attempt": {
-          "type": ["integer", "null"],
-          "minimum": 1
+        "commit_sha": {
+          "type": ["string", "null"]
         }
       }
     },
@@ -122,6 +159,18 @@
         },
         "injected_chaos_context": {
           "type": "object"
+        },
+        "laptop1_rl_advisory": {
+          "type": ["object", "null"]
+        },
+        "lineage_metadata": {
+          "type": ["object", "null"]
+        },
+        "phase1_summary": {
+          "type": ["object", "null"]
+        },
+        "phase2_summary": {
+          "type": ["object", "null"]
         }
       }
     }

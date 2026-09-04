@@ -58,20 +58,20 @@ def validate_incident_event(event: Any) -> ValidationResult:
             errors=[f"Schema validation failure: {str(e)}"]
         )
 
-    # 2. schema_version == "1.0"
-    if event.get("schema_version") != "1.0":
+    # 2. schema_version in ["1.0", "1.0.0"]
+    if event.get("schema_version") not in ["1.0", "1.0.0"]:
         return ValidationResult(
             is_valid=False,
             reason_code=TransportReasonCode.REJECTED_SCHEMA,
-            errors=[f"Invalid schema_version: '{event.get('schema_version')}' (expected '1.0')"]
+            errors=[f"Invalid schema_version: '{event.get('schema_version')}' (expected '1.0' or '1.0.0')"]
         )
 
-    # 3. event_type == "autosre.incident.ready"
-    if event.get("event_type") != "autosre.incident.ready":
+    # 3. event_type == "autosre.incident.ready.v1"
+    if event.get("event_type") != "autosre.incident.ready.v1":
         return ValidationResult(
             is_valid=False,
             reason_code=TransportReasonCode.REJECTED_SCHEMA,
-            errors=[f"Invalid event_type: '{event.get('event_type')}' (expected 'autosre.incident.ready')"]
+            errors=[f"Invalid event_type: '{event.get('event_type')}' (expected 'autosre.incident.ready.v1')"]
         )
 
     payload = event.get("payload")
@@ -110,16 +110,19 @@ def validate_incident_event(event: Any) -> ValidationResult:
             errors=[f"Top-level incident_id '{top_inc_id}' does not match payload.incident_event.incident_id '{payload_inc_id}'"]
         )
 
-    # 7. payload hash recomputation matches transport.payload_sha256
+    # 7. payload hash recomputation matches integrity.payload_sha256 (or transport.payload_sha256)
     computed_hash = compute_payload_sha256(payload)
-    transport_meta = event.get("transport", {})
-    expected_hash = transport_meta.get("payload_sha256", "").lower()
+    declared_hash = (
+        event.get("integrity", {}).get("payload_sha256")
+        or event.get("transport", {}).get("payload_sha256")
+        or ""
+    ).lower()
 
-    if computed_hash != expected_hash:
+    if computed_hash != declared_hash:
         return ValidationResult(
             is_valid=False,
             reason_code=TransportReasonCode.INVALID_PAYLOAD_HASH,
-            errors=[f"Payload hash mismatch: computed '{computed_hash}' != declared '{expected_hash}'"],
+            errors=[f"Payload hash mismatch: computed '{computed_hash}' != declared '{declared_hash}'"],
             computed_hash=computed_hash
         )
 
@@ -141,7 +144,16 @@ def validate_incident_event(event: Any) -> ValidationResult:
             errors=["correlation_id must be a non-empty string"]
         )
 
-    # 10. source.engine == "laptop1"
+    # 10. root_event_id non-empty
+    root_event_id = event.get("root_event_id")
+    if not isinstance(root_event_id, str) or not root_event_id.strip():
+        return ValidationResult(
+            is_valid=False,
+            reason_code=TransportReasonCode.REJECTED_SCHEMA,
+            errors=["root_event_id must be a non-empty string"]
+        )
+
+    # 11. source.engine == "laptop1"
     source = event.get("source", {})
     if not isinstance(source, dict) or source.get("engine") != "laptop1":
         return ValidationResult(

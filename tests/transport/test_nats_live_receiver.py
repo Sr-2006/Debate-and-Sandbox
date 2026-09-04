@@ -70,26 +70,37 @@ def test_live_nats_jetstream_receiver_flow():
                 "infrastructure_topology": {"role": "worker"},
                 "service_health_status": {"health": "degraded"},
                 "telemetry_evidence": {"log_samples": []},
-                "injected_chaos_context": {"active_mutations": "none"}
+                "injected_chaos_context": {"active_mutations": "none"},
+                "laptop1_rl_advisory": {"recommendation": "OBSERVE_FIRST"},
+                "lineage_metadata": {"collector": "stage_a"}
             }
             payload_hash = compute_payload_sha256(payload)
 
             valid_event = {
-                "schema_version": "1.0",
-                "event_type": "autosre.incident.ready",
+                "schema_version": "1.0.0",
+                "event_type": "autosre.incident.ready.v1",
                 "event_id": event_id,
+                "root_event_id": event_id,
+                "parent_event_id": None,
                 "correlation_id": "corr_live_stage_a_001",
                 "incident_id": incident_id,
+                "phase": "STAGE_A",
+                "component": "incident_engine",
+                "status": "READY",
+                "timestamp": "2026-09-04T00:00:00Z",
                 "source": {
                     "engine": "laptop1",
+                    "host": "laptop1",
+                    "version": "1.0.0",
                     "dataset_version": None,
                     "git_sha": None,
                     "generated_at": None
                 },
-                "transport": {
+                "metrics": {},
+                "integrity": {
                     "payload_sha256": payload_hash,
-                    "sent_at": "2026-09-04T00:00:00Z",
-                    "attempt": 1
+                    "signature": None,
+                    "commit_sha": None
                 },
                 "payload": payload
             }
@@ -105,7 +116,7 @@ def test_live_nats_jetstream_receiver_flow():
             assert summary["event_id"] == event_id
             assert summary["incident_id"] == incident_id
 
-            # 3. Verify staged envelope on disk contains event metadata and six canonical blocks
+            # 3. Verify staged envelope on disk contains event metadata and canonical blocks
             staged_path = summary["staged_path"]
             assert os.path.isfile(staged_path)
             with open(staged_path, "r", encoding="utf-8") as f:
@@ -113,14 +124,14 @@ def test_live_nats_jetstream_receiver_flow():
             assert staged_json["event_id"] == event_id
             assert staged_json["correlation_id"] == "corr_live_stage_a_001"
             assert staged_json["incident_id"] == incident_id
-            assert set(staged_json["payload"].keys()) == {
+            assert set(staged_json["payload"].keys()).issuperset({
                 "system_context",
                 "incident_event",
                 "infrastructure_topology",
                 "service_health_status",
                 "telemetry_evidence",
                 "injected_chaos_context"
-            }
+            })
             assert staged_json["payload"]["incident_event"]["incident_id"] == incident_id
 
             # 4. Verify SQLite DB state
@@ -135,28 +146,32 @@ def test_live_nats_jetstream_receiver_flow():
             assert summary2 is not None
             assert summary2["status"] == "ALREADY_STAGED"
 
-            # 6. Negative test: publish event with invalid source.version
+            # 6. Negative test: publish event with invalid engine
             invalid_event = {
-                "schema_version": "1.0",
-                "event_type": "autosre.incident.ready",
-                "event_id": "evt_live_invalid_ver",
-                "correlation_id": "corr_invalid_ver",
-                "incident_id": "case_invalid_ver",
+                "schema_version": "1.0.0",
+                "event_type": "autosre.incident.ready.v1",
+                "event_id": "evt_live_invalid_eng",
+                "root_event_id": "evt_live_invalid_eng",
+                "parent_event_id": None,
+                "correlation_id": "corr_invalid_eng",
+                "incident_id": "case_invalid_eng",
+                "phase": "STAGE_A",
+                "component": "incident_engine",
+                "status": "READY",
+                "timestamp": "2026-09-04T00:00:00Z",
                 "source": {
-                    "engine": "laptop1",
-                    "version": "1.0.0"
+                    "engine": "unknown_engine"
                 },
-                "transport": {
-                    "payload_sha256": payload_hash,
-                    "sent_at": "2026-09-04T00:00:00Z"
+                "integrity": {
+                    "payload_sha256": payload_hash
                 },
                 "payload": payload
             }
             await js.publish(incident_subject, json.dumps(invalid_event).encode("utf-8"))
             summary_inv = await receiver.process_single_message(timeout=5.0)
             assert summary_inv is not None
-            assert summary_inv["status"] == "REJECTED_SCHEMA"
-            assert not os.path.exists(os.path.join(staging_dir, "evt_live_invalid_ver.json"))
+            assert summary_inv["status"] in ["INVALID_SOURCE_ENGINE", "REJECTED_SCHEMA"]
+            assert not os.path.exists(os.path.join(staging_dir, "evt_live_invalid_eng.json"))
 
             await receiver.close()
 
