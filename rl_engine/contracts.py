@@ -46,6 +46,11 @@ class RLAdvisoryData:
     feature_schema_version: str
     feature_hash: str
     latency_ms: float
+    policy_action: str = "NO_ACTION"
+    execution_capability: Optional[str] = None
+    role: str = "POST_DEBATE_PRE_EXECUTION"
+    advisory_decision: str = "OBSERVE_FIRST"
+    advisory_confidence: float = 0.5
     estimated_success_probability: Optional[float] = None
     feature_snapshot: Optional[FeatureSnapshot] = None
 
@@ -56,6 +61,11 @@ class RLAdvisoryData:
             "incident_id": self.incident_id,
             "run_id": self.run_id,
             "created_at": self.created_at,
+            "role": self.role,
+            "policy_action": self.policy_action,
+            "execution_capability": self.execution_capability,
+            "advisory_decision": self.advisory_decision or self.recommendation,
+            "advisory_confidence": self.advisory_confidence,
             "policy": {
                 "policy_name": self.policy.policy_name,
                 "policy_version": self.policy.policy_version,
@@ -88,6 +98,7 @@ class RLAdvisoryData:
                 "feature_hash": self.feature_snapshot.feature_hash
             }
         return d
+
 
 
 

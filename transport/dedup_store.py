@@ -47,6 +47,10 @@ class DedupStore:
                     last_error TEXT
                 );
             """)
+            try:
+                conn.execute("ALTER TABLE received_events ADD COLUMN receipt_event_id TEXT;")
+            except sqlite3.OperationalError:
+                pass
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_incident_hash
                 ON received_events (incident_id, payload_hash);
@@ -422,7 +426,6 @@ class DedupStore:
                         now
                     )
                 )
-
             conn.execute("COMMIT;")
 
             return {
@@ -432,9 +435,33 @@ class DedupStore:
                 "incident_id": candidate["incident_id"],
                 "input_path": candidate["input_path"],
                 "input_payload_hash": candidate["payload_hash"],
+                "receipt_event_id": candidate.get("receipt_event_id"),
                 "attempt_count": attempt_count,
                 "claimed_at": now
             }
+
+    def record_receipt_event(self, event_id: str, receipt_event_id: str) -> None:
+        """Stores the autosre.transport.received.v1 event_id for the given incident.ready event_id."""
+        with self._connection() as conn:
+            try:
+                conn.execute("ALTER TABLE received_events ADD COLUMN receipt_event_id TEXT;")
+            except sqlite3.OperationalError:
+                pass
+            conn.execute(
+                "UPDATE received_events SET receipt_event_id = ? WHERE event_id = ?;",
+                (receipt_event_id, event_id)
+            )
+            conn.commit()
+
+    def get_receipt_event_id(self, event_id: str) -> Optional[str]:
+        """Retrieves receipt_event_id for the given event_id."""
+        with self._connection() as conn:
+            cursor = conn.execute(
+                "SELECT receipt_event_id FROM received_events WHERE event_id = ? LIMIT 1;",
+                (event_id,)
+            )
+            row = cursor.fetchone()
+            return row["receipt_event_id"] if row and "receipt_event_id" in row.keys() else None
 
     def mark_pipeline_succeeded(
         self,

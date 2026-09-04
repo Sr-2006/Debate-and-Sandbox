@@ -2,8 +2,9 @@ import os
 
 RL_ENABLED = os.environ.get("RL_ENABLED", "true").lower() == "true"
 RL_OPERATING_MODE = os.environ.get("RL_OPERATING_MODE", "SHADOW")  # SHADOW | ADVISORY
+RL_ROLE = "POST_DEBATE_PRE_EXECUTION"
 RL_POLICY_NAME = os.environ.get("RL_POLICY_NAME", "safe_disjoint_linucb")
-RL_POLICY_VERSION = os.environ.get("RL_POLICY_VERSION", "rl-mvp-1")
+RL_POLICY_VERSION = os.environ.get("RL_POLICY_VERSION", "policy-v1")
 RL_FEATURE_VERSION = os.environ.get("RL_FEATURE_VERSION", "features-v2")
 RL_FEATURE_DIMENSION = 51  # 23 numerical + 28 categorical
 RL_REWARD_VERSION = os.environ.get("RL_REWARD_VERSION", "reward-v1")

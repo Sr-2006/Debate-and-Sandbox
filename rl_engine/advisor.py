@@ -2,13 +2,15 @@ import uuid
 import time
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
-from rl_engine.config import RL_OPERATING_MODE, RL_POLICY_NAME, RL_POLICY_VERSION, RL_FEATURE_VERSION, RL_MIN_CAPABILITY_EPISODES
+from rl_engine.config import RL_OPERATING_MODE, RL_POLICY_NAME, RL_POLICY_VERSION, RL_FEATURE_VERSION, RL_MIN_CAPABILITY_EPISODES, RL_ROLE
 from rl_engine.contracts import RLAdvisoryData, PolicyRef, ProposalRef, FeatureSnapshot
 from rl_engine.feature_extractor import extract_features
 from rl_engine.bayesian_prior import get_bayesian_prior
 from rl_engine.safety_mask import get_allowed_actions
 from rl_engine.model_store import ModelStore
 from contracts.validation import get_capabilities, is_mvp_supported
+from shared.action_registry import get_policy_action_for_intent, get_capability_for_policy_action
+
 
 
 
@@ -132,12 +134,21 @@ class RLAdvisor:
                 feature_hash=feat_hash
             )
 
+            policy_action = get_policy_action_for_intent(intent_type)
+            exec_cap = get_capability_for_policy_action(policy_action) or intent_type
+            advisory_conf = float(scores.get(recommendation, 0.5) or 0.5)
+
             return RLAdvisoryData(
                 schema_version="1.0",
                 advisory_id=advisory_id,
                 incident_id=incident_id,
                 run_id=effective_run_id,
                 created_at=datetime.now(timezone.utc).isoformat(),
+                role=RL_ROLE,
+                policy_action=policy_action,
+                execution_capability=exec_cap,
+                advisory_decision=recommendation,
+                advisory_confidence=advisory_conf,
                 policy=PolicyRef(
                     policy_name=RL_POLICY_NAME,
                     policy_version=RL_POLICY_VERSION,
@@ -163,6 +174,7 @@ class RLAdvisor:
                 estimated_success_probability=round(lower_bound, 4),
                 feature_snapshot=snapshot
             )
+
 
 
 

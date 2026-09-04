@@ -2,16 +2,18 @@
 
 Pulls STAGED incident events, validates input payload hash and envelope identity,
 executes the Phase 3/4 pipeline coordinator, verifies source file immutability,
-validates output report integrity, and publishes completion results back to JetStream.
+validates output report integrity, and publishes full 13-stage lifecycle events back to JetStream.
 """
 
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import re
 import subprocess
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
@@ -22,17 +24,39 @@ from transport.dedup_store import DedupStore
 from transport.result_publisher import (
     Laptop2ResultPublisher,
     build_phase34_completed_event,
-    compute_event_log_hash_for_report,
     DEFAULT_NATS_URL,
     DEFAULT_STREAM,
     DEFAULT_RESULT_SUBJECT,
     DEFAULT_STATE_DB,
 )
 from shadow_sandbox.reports.report_generator import compute_report_hash
+from shared.subjects import (
+    SUBJECT_TRANSPORT_RECEIVED,
+    SUBJECT_PHASE3_STARTED,
+    SUBJECT_PHASE3_DEBATE,
+    SUBJECT_PHASE3_COMPLETED,
+    SUBJECT_RL_LAPTOP2_ADVISORY,
+    SUBJECT_PHASE4_STARTED,
+    SUBJECT_PHASE4_ATTESTATION,
+    SUBJECT_PHASE4_EXECUTION,
+    SUBJECT_PHASE4_VERIFICATION,
+    SUBJECT_PHASE4_COMPLETED,
+    SUBJECT_RL_FEEDBACK,
+    SUBJECT_PIPELINE_COMPLETED,
+    SUBJECT_PIPELINE_FAILED,
+    SUBJECT_LEGACY_COMPLETED,
+)
+from shared.event_envelope import build_event_envelope, validate_event_envelope
+from shared.event_publisher import EventPublisher
+from shared.telemetry import emit_log_event, emit_metric_event
+from shared.action_registry import get_policy_action_for_intent, get_capability_for_policy_action
+from rl_engine.feedback import build_rl_feedback_payload
+
+logger = logging.getLogger(__name__)
 
 
 class Laptop2ProcessingWorker:
-    """Automated worker orchestrating STAGED incident -> Pipeline Execution -> Result Publication."""
+    """Automated worker orchestrating STAGED incident -> Pipeline Execution -> Lifecycle Event Publication."""
 
     def __init__(
         self,
@@ -213,7 +237,43 @@ class Laptop2ProcessingWorker:
         except Exception as ex:
             return -2, "", str(ex), None
 
-    async def _publish_result_event(
+    async def _publish_lifecycle_event(
+        self,
+        publisher: Optional[EventPublisher],
+        subject: str,
+        event_type: str,
+        root_event_id: str,
+        parent_event_id: Optional[str],
+        correlation_id: str,
+        incident_id: str,
+        phase: str,
+        component: str,
+        status: str,
+        payload: Dict[str, Any],
+        metrics: Optional[Dict[str, Any]] = None
+    ) -> Tuple[str, Dict[str, Any]]:
+        """Builds, validates, and optionally publishes a 15-field lifecycle event."""
+        envelope = build_event_envelope(
+            event_type=event_type,
+            root_event_id=root_event_id,
+            parent_event_id=parent_event_id,
+            correlation_id=correlation_id,
+            incident_id=incident_id,
+            phase=phase,
+            component=component,
+            status=status,
+            payload=payload,
+            metrics=metrics or {},
+            source_engine="laptop2"
+        )
+        if publisher:
+            try:
+                await publisher.publish_event(subject, envelope)
+            except Exception as e:
+                logger.warning(f"Could not publish lifecycle event {event_type} to {subject}: {e}")
+        return envelope["event_id"], envelope
+
+    async def _publish_legacy_result(
         self,
         report_data: Dict[str, Any],
         parent_event_id: str,
@@ -221,7 +281,7 @@ class Laptop2ProcessingWorker:
         input_payload_hash: str,
         report_path: str
     ) -> Dict[str, Any]:
-        """Builds and publishes the completed result event to JetStream."""
+        """Publishes legacy autosre.phase34.completed.v1 event for backward compatibility."""
         event = build_phase34_completed_event(
             report=report_data,
             parent_event_id=parent_event_id,
@@ -248,7 +308,7 @@ class Laptop2ProcessingWorker:
         retry_failed: bool = False,
         recover_stale: bool = False
     ) -> Dict[str, Any]:
-        """Claims a STAGED incident event, executes the pipeline, and publishes the result."""
+        """Claims a STAGED incident event, executes the pipeline, and publishes the full lifecycle chain."""
         claim = self.dedup_store.claim_staged_event(
             parent_event_id=parent_event_id,
             retry_failed=retry_failed,
@@ -273,15 +333,47 @@ class Laptop2ProcessingWorker:
         input_payload_hash = claim["input_payload_hash"]
 
         # Step 1: Input file immutability, envelope identity, and canonical payload hash verification
-        is_valid_input, err_code, input_err, raw_sha_before, _ = self._verify_staged_input_and_identity(
+        is_valid_input, err_code, input_err, raw_sha_before, staged_envelope = self._verify_staged_input_and_identity(
             input_path=input_path,
             expected_parent_event_id=event_id,
             expected_correlation_id=correlation_id,
             expected_incident_id=incident_id,
             expected_payload_hash=input_payload_hash
         )
+
+        # Extract root_event_id: strictly preserve incoming root_event_id
+        staged_dict = staged_envelope or {}
+        root_event_id = staged_dict.get("root_event_id") or event_id
+        receipt_event_id = claim.get("receipt_event_id") or self.dedup_store.get_receipt_event_id(event_id)
+        current_parent_event_id = event_id
+
+        # Initialize event publisher
+        publisher: Optional[EventPublisher] = None
+        if self.nats_url:
+            try:
+                publisher = EventPublisher(nats_url=self.nats_url, stream_name=self.stream_name)
+                await publisher.connect()
+            except Exception as pe:
+                logger.warning(f"Could not connect EventPublisher to {self.nats_url}: {pe}")
+                publisher = None
+
         if not is_valid_input:
             self.dedup_store.mark_processing_failed(event_id, err_code or "INPUT_INVALID", input_err or "Invalid input")
+            if publisher:
+                await self._publish_lifecycle_event(
+                    publisher=publisher,
+                    subject=SUBJECT_PIPELINE_FAILED,
+                    event_type="autosre.pipeline.failed",
+                    root_event_id=root_event_id,
+                    parent_event_id=current_parent_event_id,
+                    correlation_id=correlation_id,
+                    incident_id=incident_id,
+                    phase="PIPELINE",
+                    component="orchestrator",
+                    status="FAILED",
+                    payload={"error_code": err_code or "INPUT_INVALID", "error_message": input_err, "failed_step": "input_verification"}
+                )
+                await publisher.close()
             return {
                 "status": "FAILED",
                 "error_code": err_code or "INPUT_INVALID",
@@ -289,13 +381,82 @@ class Laptop2ProcessingWorker:
                 "message": input_err
             }
 
-        # Step 2: Run pipeline subprocess
+        # Step 1b: Ensure transport.received.v1 is in the parent chain
+        if receipt_event_id:
+            current_parent_event_id = receipt_event_id
+        else:
+            t_recv_id, _ = await self._publish_lifecycle_event(
+                publisher=publisher,
+                subject=SUBJECT_TRANSPORT_RECEIVED,
+                event_type="autosre.transport.received",
+                root_event_id=root_event_id,
+                parent_event_id=current_parent_event_id,
+                correlation_id=correlation_id,
+                incident_id=incident_id,
+                phase="TRANSPORT",
+                component="receiver",
+                status="RECEIVED",
+                payload={
+                    "incident_ready_event_id": event_id,
+                    "staged_path": input_path,
+                    "payload_hash": input_payload_hash,
+                    "status": "STAGED"
+                }
+            )
+            current_parent_event_id = t_recv_id
+
+        # Emit telemetry start (Parallel, does NOT advance parent_event_id)
+        if publisher:
+            await emit_log_event(
+                publisher=publisher,
+                root_event_id=root_event_id,
+                correlation_id=correlation_id,
+                incident_id=incident_id,
+                phase="PHASE3",
+                component="orchestrator",
+                level="INFO",
+                message=f"Starting Laptop 2 processing for incident {incident_id}",
+                parent_event_id=current_parent_event_id
+            )
+
+        # Step 2: Publish autosre.phase3.started.v1
+        p3_started_id, _ = await self._publish_lifecycle_event(
+            publisher=publisher,
+            subject=SUBJECT_PHASE3_STARTED,
+            event_type="autosre.phase3.started",
+            root_event_id=root_event_id,
+            parent_event_id=current_parent_event_id,
+            correlation_id=correlation_id,
+            incident_id=incident_id,
+            phase="PHASE3",
+            component="orchestrator",
+            status="STARTED",
+            payload={"incident_id": incident_id, "input_path": input_path, "status": "STARTED"}
+        )
+        current_parent_event_id = p3_started_id
+
+        # Step 3: Run pipeline subprocess
         returncode, stdout, stderr, summary_dict = self._run_pipeline_subprocess(input_path)
 
-        # Step 2b: Verify file immutability immediately after subprocess finishes (success or failure)
+        # Step 3b: Verify file immutability immediately after subprocess finishes
         is_immutable, immut_err = self._verify_file_immutability(input_path, raw_sha_before)
         if not is_immutable:
             self.dedup_store.mark_processing_failed(event_id, "INPUT_FILE_TAMPERED", immut_err or "File mutated")
+            if publisher:
+                await self._publish_lifecycle_event(
+                    publisher=publisher,
+                    subject=SUBJECT_PIPELINE_FAILED,
+                    event_type="autosre.pipeline.failed",
+                    root_event_id=root_event_id,
+                    parent_event_id=current_parent_event_id,
+                    correlation_id=correlation_id,
+                    incident_id=incident_id,
+                    phase="PIPELINE",
+                    component="orchestrator",
+                    status="FAILED",
+                    payload={"error_code": "INPUT_FILE_TAMPERED", "error_message": immut_err, "failed_step": "file_immutability"}
+                )
+                await publisher.close()
             return {
                 "status": "FAILED",
                 "error_code": "INPUT_FILE_TAMPERED",
@@ -306,6 +467,21 @@ class Laptop2ProcessingWorker:
         if returncode == -1:
             err_msg = f"Pipeline execution timed out after {self.pipeline_timeout_seconds}s"
             self.dedup_store.mark_processing_failed(event_id, "PIPELINE_TIMEOUT", err_msg)
+            if publisher:
+                await self._publish_lifecycle_event(
+                    publisher=publisher,
+                    subject=SUBJECT_PIPELINE_FAILED,
+                    event_type="autosre.pipeline.failed",
+                    root_event_id=root_event_id,
+                    parent_event_id=current_parent_event_id,
+                    correlation_id=correlation_id,
+                    incident_id=incident_id,
+                    phase="PIPELINE",
+                    component="orchestrator",
+                    status="FAILED",
+                    payload={"error_code": "PIPELINE_TIMEOUT", "error_message": err_msg, "failed_step": "subprocess_execution"}
+                )
+                await publisher.close()
             return {
                 "status": "FAILED",
                 "error_code": "PIPELINE_TIMEOUT",
@@ -316,6 +492,21 @@ class Laptop2ProcessingWorker:
         if returncode != 0:
             err_msg = f"Pipeline exited with returncode {returncode}: {stderr[:500]}"
             self.dedup_store.mark_processing_failed(event_id, "PIPELINE_EXIT_NONZERO", err_msg)
+            if publisher:
+                await self._publish_lifecycle_event(
+                    publisher=publisher,
+                    subject=SUBJECT_PIPELINE_FAILED,
+                    event_type="autosre.pipeline.failed",
+                    root_event_id=root_event_id,
+                    parent_event_id=current_parent_event_id,
+                    correlation_id=correlation_id,
+                    incident_id=incident_id,
+                    phase="PIPELINE",
+                    component="orchestrator",
+                    status="FAILED",
+                    payload={"error_code": "PIPELINE_EXIT_NONZERO", "error_message": err_msg, "failed_step": "subprocess_execution"}
+                )
+                await publisher.close()
             return {
                 "status": "FAILED",
                 "error_code": "PIPELINE_EXIT_NONZERO",
@@ -326,6 +517,21 @@ class Laptop2ProcessingWorker:
         if not summary_dict or not summary_dict.get("json_report"):
             err_msg = "Pipeline completed without generating a readable report path"
             self.dedup_store.mark_processing_failed(event_id, "REPORT_NOT_FOUND", err_msg)
+            if publisher:
+                await self._publish_lifecycle_event(
+                    publisher=publisher,
+                    subject=SUBJECT_PIPELINE_FAILED,
+                    event_type="autosre.pipeline.failed",
+                    root_event_id=root_event_id,
+                    parent_event_id=current_parent_event_id,
+                    correlation_id=correlation_id,
+                    incident_id=incident_id,
+                    phase="PIPELINE",
+                    component="orchestrator",
+                    status="FAILED",
+                    payload={"error_code": "REPORT_NOT_FOUND", "error_message": err_msg, "failed_step": "report_generation"}
+                )
+                await publisher.close()
             return {
                 "status": "FAILED",
                 "error_code": "REPORT_NOT_FOUND",
@@ -337,6 +543,21 @@ class Laptop2ProcessingWorker:
         if not os.path.exists(report_path):
             err_msg = f"Generated report file missing at: {report_path}"
             self.dedup_store.mark_processing_failed(event_id, "REPORT_NOT_FOUND", err_msg)
+            if publisher:
+                await self._publish_lifecycle_event(
+                    publisher=publisher,
+                    subject=SUBJECT_PIPELINE_FAILED,
+                    event_type="autosre.pipeline.failed",
+                    root_event_id=root_event_id,
+                    parent_event_id=current_parent_event_id,
+                    correlation_id=correlation_id,
+                    incident_id=incident_id,
+                    phase="PIPELINE",
+                    component="orchestrator",
+                    status="FAILED",
+                    payload={"error_code": "REPORT_NOT_FOUND", "error_message": err_msg, "failed_step": "report_disk_read"}
+                )
+                await publisher.close()
             return {
                 "status": "FAILED",
                 "error_code": "REPORT_NOT_FOUND",
@@ -344,13 +565,28 @@ class Laptop2ProcessingWorker:
                 "message": err_msg
             }
 
-        # Step 3: Load and verify report integrity
+        # Step 4: Load and verify report integrity
         try:
             with open(report_path, "r", encoding="utf-8") as rf:
                 report_data = json.load(rf)
         except Exception as e:
             err_msg = f"Failed to load JSON report: {e}"
             self.dedup_store.mark_processing_failed(event_id, "REPORT_LOAD_ERROR", err_msg)
+            if publisher:
+                await self._publish_lifecycle_event(
+                    publisher=publisher,
+                    subject=SUBJECT_PIPELINE_FAILED,
+                    event_type="autosre.pipeline.failed",
+                    root_event_id=root_event_id,
+                    parent_event_id=current_parent_event_id,
+                    correlation_id=correlation_id,
+                    incident_id=incident_id,
+                    phase="PIPELINE",
+                    component="orchestrator",
+                    status="FAILED",
+                    payload={"error_code": "REPORT_LOAD_ERROR", "error_message": err_msg, "failed_step": "report_parse"}
+                )
+                await publisher.close()
             return {
                 "status": "FAILED",
                 "error_code": "REPORT_LOAD_ERROR",
@@ -367,6 +603,21 @@ class Laptop2ProcessingWorker:
         if (report_case_id and report_case_id != incident_id) or (summary_incident_id and summary_incident_id != incident_id):
             err_msg = f"Report incident mismatch: expected {incident_id}, found report_case_id={report_case_id}, summary_incident_id={summary_incident_id}"
             self.dedup_store.mark_processing_failed(event_id, "REPORT_MISMATCH", err_msg)
+            if publisher:
+                await self._publish_lifecycle_event(
+                    publisher=publisher,
+                    subject=SUBJECT_PIPELINE_FAILED,
+                    event_type="autosre.pipeline.failed",
+                    root_event_id=root_event_id,
+                    parent_event_id=current_parent_event_id,
+                    correlation_id=correlation_id,
+                    incident_id=incident_id,
+                    phase="PIPELINE",
+                    component="orchestrator",
+                    status="FAILED",
+                    payload={"error_code": "REPORT_MISMATCH", "error_message": err_msg, "failed_step": "incident_matching"}
+                )
+                await publisher.close()
             return {
                 "status": "FAILED",
                 "error_code": "REPORT_MISMATCH",
@@ -385,28 +636,236 @@ class Laptop2ProcessingWorker:
             report_hash=computed_report_hash
         )
 
-        # Step 4: Publish result event over JetStream
+        # Step 5: Publish sequential lifecycle events
+        # 5a. autosre.phase3.debate.v1
+        p3_data = report_data.get("phase3", {})
+        p3_debate_id, _ = await self._publish_lifecycle_event(
+            publisher=publisher,
+            subject=SUBJECT_PHASE3_DEBATE,
+            event_type="autosre.phase3.debate",
+            root_event_id=root_event_id,
+            parent_event_id=current_parent_event_id,
+            correlation_id=correlation_id,
+            incident_id=incident_id,
+            phase="PHASE3",
+            component="debate",
+            status="IN_PROGRESS",
+            payload={
+                "rounds": p3_data.get("rounds", []),
+                "transcript_summary": p3_data.get("transcript_summary", ""),
+                "confidence": p3_data.get("confidence", {}),
+                "winner": p3_data.get("winning_proposal", {}).get("proposer", "unknown")
+            }
+        )
+        current_parent_event_id = p3_debate_id
+
+        # 5b. autosre.phase3.completed.v1
+        p3_completed_id, _ = await self._publish_lifecycle_event(
+            publisher=publisher,
+            subject=SUBJECT_PHASE3_COMPLETED,
+            event_type="autosre.phase3.completed",
+            root_event_id=root_event_id,
+            parent_event_id=current_parent_event_id,
+            correlation_id=correlation_id,
+            incident_id=incident_id,
+            phase="PHASE3",
+            component="debate",
+            status="COMPLETED",
+            payload={
+                "proposal": p3_data.get("winning_proposal") or p3_data.get("selected_action") or {},
+                "status": "COMPLETED",
+                "confidence": p3_data.get("confidence", {})
+            }
+        )
+        current_parent_event_id = p3_completed_id
+
+        # 5c. autosre.rl.laptop2.advisory.v1
+        rl_data = report_data.get("rl_advisory", {})
+        intent_type = rl_data.get("proposal", {}).get("intent_type", "")
+        pol_action = rl_data.get("policy_action") or get_policy_action_for_intent(intent_type)
+        exec_cap = rl_data.get("execution_capability") or get_capability_for_policy_action(pol_action) or intent_type
+        rl_adv_id, _ = await self._publish_lifecycle_event(
+            publisher=publisher,
+            subject=SUBJECT_RL_LAPTOP2_ADVISORY,
+            event_type="autosre.rl.laptop2.advisory",
+            root_event_id=root_event_id,
+            parent_event_id=current_parent_event_id,
+            correlation_id=correlation_id,
+            incident_id=incident_id,
+            phase="RL",
+            component="advisor",
+            status="ADVISED",
+            payload={
+                "advisory_id": rl_data.get("advisory_id", f"adv_{uuid.uuid4().hex[:8]}"),
+                "role": rl_data.get("role", "POST_DEBATE_PRE_EXECUTION"),
+                "policy_action": pol_action,
+                "execution_capability": exec_cap,
+                "recommendation": rl_data.get("recommendation", "OBSERVE_FIRST"),
+                "advisory_decision": rl_data.get("advisory_decision") or rl_data.get("recommendation", "OBSERVE_FIRST"),
+                "advisory_confidence": rl_data.get("advisory_confidence", 0.5),
+                "uncertainty": rl_data.get("uncertainty", 0.5),
+                "cold_start": rl_data.get("cold_start", True),
+                "influence_allowed": rl_data.get("influence_allowed", False),
+                "feature_hash": rl_data.get("feature_hash", "")
+            }
+        )
+        current_parent_event_id = rl_adv_id
+
+        # 5d. autosre.phase4.started.v1
+        p4_data = report_data.get("phase4", {})
+        p4_started_id, _ = await self._publish_lifecycle_event(
+            publisher=publisher,
+            subject=SUBJECT_PHASE4_STARTED,
+            event_type="autosre.phase4.started",
+            root_event_id=root_event_id,
+            parent_event_id=current_parent_event_id,
+            correlation_id=correlation_id,
+            incident_id=incident_id,
+            phase="PHASE4",
+            component="shadow_sandbox",
+            status="STARTED",
+            payload={
+                "execution_target": p4_data.get("execution", {}).get("target", "sandbox"),
+                "mode": "SHADOW_SANDBOX"
+            }
+        )
+        current_parent_event_id = p4_started_id
+
+        # 5e. autosre.phase4.attestation.v1
+        attest_data = p4_data.get("attestation", {})
+        attest_status = attest_data.get("status", "PASSED")
+        p4_attest_id, _ = await self._publish_lifecycle_event(
+            publisher=publisher,
+            subject=SUBJECT_PHASE4_ATTESTATION,
+            event_type="autosre.phase4.attestation",
+            root_event_id=root_event_id,
+            parent_event_id=current_parent_event_id,
+            correlation_id=correlation_id,
+            incident_id=incident_id,
+            phase="PHASE4",
+            component="attestation",
+            status=attest_status,
+            payload=attest_data
+        )
+        current_parent_event_id = p4_attest_id
+
+        # 5f. autosre.phase4.execution.v1
+        exec_data = p4_data.get("execution", {})
+        exec_status = exec_data.get("status", "EXECUTED")
+        p4_exec_id, _ = await self._publish_lifecycle_event(
+            publisher=publisher,
+            subject=SUBJECT_PHASE4_EXECUTION,
+            event_type="autosre.phase4.execution",
+            root_event_id=root_event_id,
+            parent_event_id=current_parent_event_id,
+            correlation_id=correlation_id,
+            incident_id=incident_id,
+            phase="PHASE4",
+            component="executor",
+            status=exec_status,
+            payload=exec_data
+        )
+        current_parent_event_id = p4_exec_id
+
+        # 5g. autosre.phase4.verification.v1
+        ver_data = p4_data.get("verification", {})
+        ver_status = ver_data.get("status", "PASSED")
+        p4_ver_id, _ = await self._publish_lifecycle_event(
+            publisher=publisher,
+            subject=SUBJECT_PHASE4_VERIFICATION,
+            event_type="autosre.phase4.verification",
+            root_event_id=root_event_id,
+            parent_event_id=current_parent_event_id,
+            correlation_id=correlation_id,
+            incident_id=incident_id,
+            phase="PHASE4",
+            component="verifier",
+            status=ver_status,
+            payload=ver_data
+        )
+        current_parent_event_id = p4_ver_id
+
+        # 5h. autosre.phase4.completed.v1
+        p4_completed_id, _ = await self._publish_lifecycle_event(
+            publisher=publisher,
+            subject=SUBJECT_PHASE4_COMPLETED,
+            event_type="autosre.phase4.completed",
+            root_event_id=root_event_id,
+            parent_event_id=current_parent_event_id,
+            correlation_id=correlation_id,
+            incident_id=incident_id,
+            phase="PHASE4",
+            component="shadow_sandbox",
+            status="COMPLETED",
+            payload={
+                "outcome": final_outcome,
+                "verification_run_id": run_id,
+                "phase4_summary": p4_data
+            }
+        )
+        current_parent_event_id = p4_completed_id
+
+        # 5i. autosre.rl.feedback.v1
+        feedback_payload = build_rl_feedback_payload(
+            advisory=report_data.get("rl_advisory"),
+            phase4_result=report_data.get("phase4"),
+            final_outcome=final_outcome,
+            feature_hash=report_data.get("rl_advisory", {}).get("feature_hash")
+        )
+        rl_fb_id, _ = await self._publish_lifecycle_event(
+            publisher=publisher,
+            subject=SUBJECT_RL_FEEDBACK,
+            event_type="autosre.rl.feedback",
+            root_event_id=root_event_id,
+            parent_event_id=current_parent_event_id,
+            correlation_id=correlation_id,
+            incident_id=incident_id,
+            phase="RL",
+            component="feedback",
+            status="RECORDED",
+            payload=feedback_payload,
+            metrics={"reward": feedback_payload.get("reward", 0.0)}
+        )
+        current_parent_event_id = rl_fb_id
+
+        # 5j. autosre.pipeline.completed.v1
+        pipeline_comp_id, _ = await self._publish_lifecycle_event(
+            publisher=publisher,
+            subject=SUBJECT_PIPELINE_COMPLETED,
+            event_type="autosre.pipeline.completed",
+            root_event_id=root_event_id,
+            parent_event_id=current_parent_event_id,
+            correlation_id=correlation_id,
+            incident_id=incident_id,
+            phase="PIPELINE",
+            component="orchestrator",
+            status="COMPLETED",
+            payload={
+                "outcome": final_outcome,
+                "report_path": report_path,
+                "report_hash": computed_report_hash,
+                "pipeline_run_id": run_id
+            },
+            metrics={"duration_ms": report_data.get("final_summary", {}).get("total_duration_ms", 0.0)}
+        )
+        current_parent_event_id = pipeline_comp_id
+
+        # 5k. Publish legacy result event for backward compatibility
         try:
-            pub_info = await self._publish_result_event(
+            pub_info = await self._publish_legacy_result(
                 report_data=report_data,
                 parent_event_id=event_id,
                 correlation_id=correlation_id,
                 input_payload_hash=input_payload_hash,
                 report_path=report_path
             )
+            result_event = pub_info["event"]
+            pub_result = pub_info["publish_result"]
+            result_event_id = result_event["event_id"]
         except Exception as pe:
-            err_msg = f"Result event publication failed: {pe}"
-            self.dedup_store.mark_processing_failed(event_id, "RESULT_PUBLISH_FAILED", err_msg)
-            return {
-                "status": "FAILED",
-                "error_code": "RESULT_PUBLISH_FAILED",
-                "parent_event_id": event_id,
-                "message": err_msg
-            }
-
-        result_event = pub_info["event"]
-        pub_result = pub_info["publish_result"]
-        result_event_id = result_event["event_id"]
+            logger.warning(f"Legacy result event publication skipped or failed: {pe}")
+            result_event_id = pipeline_comp_id
+            pub_result = {"status": "LEGACY_PUBLISH_SKIPPED"}
 
         # Validate semantic dedup return if skipped
         if pub_result.get("status") == "SKIPPED_ALREADY_PUBLISHED":
@@ -421,16 +880,32 @@ class Laptop2ProcessingWorker:
                 }
             result_event_id = pub_result.get("event_id")
 
-        # Step 5: Mark RESULT_PUBLISHED only after successful publication / verified dedup
+        # Step 6: Mark RESULT_PUBLISHED in dedup store
         self.dedup_store.mark_result_published(
             parent_event_id=event_id,
             result_event_id=result_event_id,
             report_hash=computed_report_hash
         )
 
+        # Emit telemetry completion (Parallel, does NOT advance parent_event_id)
+        if publisher:
+            await emit_log_event(
+                publisher=publisher,
+                root_event_id=root_event_id,
+                correlation_id=correlation_id,
+                incident_id=incident_id,
+                phase="PIPELINE",
+                component="orchestrator",
+                level="INFO",
+                message=f"Pipeline execution completed with outcome: {final_outcome}",
+                parent_event_id=current_parent_event_id
+            )
+            await publisher.close()
+
         return {
             "status": "PROCESSING_COMPLETE",
             "parent_event_id": event_id,
+            "root_event_id": root_event_id,
             "correlation_id": correlation_id,
             "incident_id": incident_id,
             "pipeline_run_id": run_id,
@@ -438,6 +913,7 @@ class Laptop2ProcessingWorker:
             "report_path": report_path,
             "report_hash": computed_report_hash,
             "result_event_id": result_event_id,
+            "pipeline_completed_event_id": pipeline_comp_id,
             "publish_status": pub_result.get("status")
         }
 

@@ -24,6 +24,8 @@ from transport.canonical_json import compute_payload_sha256, canonical_json_str
 from transport.validation import validate_incident_event
 from transport.dedup_store import DedupStore
 from contracts.models import get_runtime_git_commit
+from shared.event_envelope import build_event_envelope, canonical_json_bytes
+
 
 DEFAULT_NATS_URL = os.environ.get("AUTOSRE_NATS_URL", "nats://127.0.0.1:4222")
 DEFAULT_STREAM = os.environ.get("AUTOSRE_STREAM", "AUTOSRE")
@@ -239,28 +241,61 @@ class Laptop2IncidentReceiver:
         event: Dict[str, Any],
         staged_path: str
     ) -> None:
-        """Publishes autosre.transport.receipt.v1 event if NATS JetStream is active."""
+        """Publishes autosre.transport.received.v1 and legacy autosre.transport.receipt.v1 if JetStream is active."""
         if not self.publish_receipts or not self.js:
             return
 
+        event_id = event.get("event_id", "")
+        root_event_id = event.get("root_event_id") or event_id
+        correlation_id = event.get("correlation_id", "")
+        incident_id = event.get("incident_id", "")
+        payload_hash = event.get("integrity", {}).get("payload_sha256") or event.get("transport", {}).get("payload_sha256") or compute_payload_sha256(event.get("payload", {}))
+
+        # 1. Standardized 15-field lifecycle event: autosre.transport.received.v1
+        received_envelope = build_event_envelope(
+            event_type="autosre.transport.received",
+            root_event_id=root_event_id,
+            parent_event_id=event_id,
+            correlation_id=correlation_id,
+            incident_id=incident_id,
+            phase="TRANSPORT",
+            component="receiver",
+            status="RECEIVED",
+            payload={
+                "incident_ready_event_id": event_id,
+                "staged_path": staged_path,
+                "payload_hash": payload_hash,
+                "status": "STAGED"
+            },
+            source_engine="laptop2"
+        )
+
+        try:
+            payload_bytes = canonical_json_bytes(received_envelope)
+            await self.js.publish("autosre.transport.received.v1", payload_bytes)
+            self.dedup_store.record_receipt_event(event_id, received_envelope["event_id"])
+        except Exception:
+            pass
+
+        # 2. Legacy receipt for backwards compatibility
         receipt = TransportReceipt(
             schema_version="1.0",
             event_type="autosre.transport.receipt",
             event_id=f"evt_receipt_{uuid.uuid4().hex[:12]}",
-            parent_event_id=event.get("event_id", ""),
-            correlation_id=event.get("correlation_id", ""),
-            incident_id=event.get("incident_id", ""),
+            parent_event_id=event_id,
+            correlation_id=correlation_id,
+            incident_id=incident_id,
             status="STAGED",
             received_at=_now_iso(),
             laptop2_commit=get_runtime_git_commit()
         )
 
         try:
-            payload_bytes = json.dumps(receipt.to_dict()).encode("utf-8")
-            await self.js.publish(RECEIPT_SUBJECT, payload_bytes)
+            legacy_bytes = json.dumps(receipt.to_dict()).encode("utf-8")
+            await self.js.publish(RECEIPT_SUBJECT, legacy_bytes)
         except Exception:
-            # Receipt publication should not fail local durable receipt
             pass
+
 
     async def process_single_message(
         self,
