@@ -32,5 +32,8 @@ SUBJECT_PIPELINE_FAILED = "autosre.pipeline.failed.v1"
 SUBJECT_TELEMETRY_LOGS = "autosre.telemetry.logs.v1"
 SUBJECT_TELEMETRY_METRICS = "autosre.telemetry.metrics.v1"
 
+# System & Heartbeat subjects
+SUBJECT_LAPTOP2_HEARTBEAT = "autosre.system.laptop2.heartbeat.v1"
+
 # Legacy compatibility
 SUBJECT_LEGACY_COMPLETED = "autosre.phase34.completed.v1"
