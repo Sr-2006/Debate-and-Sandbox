@@ -1,0 +1,143 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Phase34CompletedV1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "event_id",
+    "event_type",
+    "incident_id",
+    "parent_event_id",
+    "correlation_id",
+    "created_at",
+    "source",
+    "final_outcome",
+    "phase_3",
+    "rl_advisory",
+    "phase_4",
+    "integrity"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["v1"]
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^evt_[a-f0-9]{32}$"
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["autosre.phase34.completed"]
+    },
+    "incident_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parent_event_id": {
+      "type": "string",
+      "pattern": "^evt_[a-f0-9]{32}$"
+    },
+    "correlation_id": {
+      "type": "string",
+      "pattern": "^corr_[a-f0-9]{32}$"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "object",
+      "required": ["engine", "git_sha", "generated_at"],
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "type": "string",
+          "enum": ["laptop2"]
+        },
+        "git_sha": {
+          "type": "string",
+          "minLength": 7
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "final_outcome": {
+      "type": "string",
+      "minLength": 1
+    },
+    "phase_3": {
+      "type": "object",
+      "required": [
+        "status",
+        "confidence_score",
+        "orchestrator_decision",
+        "safety_status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "string" },
+        "confidence_score": { "type": ["number", "null"] },
+        "orchestrator_decision": { "type": "string" },
+        "safety_status": { "type": "string" },
+        "selected_intent": { "type": ["object", "null"] }
+      }
+    },
+    "rl_advisory": {
+      "type": "object",
+      "required": [
+        "status",
+        "operating_mode",
+        "advisory_decision",
+        "advisory_confidence",
+        "feature_schema_version",
+        "feature_hash"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "string" },
+        "operating_mode": { "type": "string" },
+        "advisory_decision": { "type": ["string", "null"] },
+        "advisory_confidence": { "type": ["number", "null"] },
+        "feature_schema_version": { "type": "string" },
+        "feature_hash": { "type": "string" }
+      }
+    },
+    "phase_4": {
+      "type": "object",
+      "required": [
+        "status",
+        "target",
+        "attestation_status",
+        "execution_status",
+        "execution_capability",
+        "verification_status",
+        "rollback_status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "string" },
+        "target": { "type": ["object", "string", "null"] },
+        "attestation_status": { "type": "string" },
+        "execution_status": { "type": "string" },
+        "execution_capability": { "type": "string" },
+        "verification_status": { "type": "string" },
+        "rollback_status": { "type": "string" }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "required": ["input_payload_sha256", "report_hash", "events_log_hash"],
+      "additionalProperties": false,
+      "properties": {
+        "input_payload_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "report_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "events_log_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    }
+  }
+}

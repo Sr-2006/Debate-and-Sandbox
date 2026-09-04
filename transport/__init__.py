@@ -19,6 +19,11 @@ from transport.nats_receiver import (
     stage_payload_atomically,
 )
 from transport.pipeline_adapter import normalize_for_pipeline
+from transport.result_publisher import (
+    build_phase34_completed_event,
+    validate_completed_event,
+    Laptop2ResultPublisher,
+)
 
 __all__ = [
     "CANONICAL_BLOCKS",
@@ -34,4 +39,7 @@ __all__ = [
     "Laptop2IncidentReceiver",
     "stage_payload_atomically",
     "normalize_for_pipeline",
+    "build_phase34_completed_event",
+    "validate_completed_event",
+    "Laptop2ResultPublisher",
 ]

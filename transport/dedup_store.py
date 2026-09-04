@@ -51,6 +51,37 @@ class DedupStore:
                 CREATE INDEX IF NOT EXISTS idx_incident_hash
                 ON received_events (incident_id, payload_hash);
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS published_results (
+                    event_id TEXT PRIMARY KEY,
+                    parent_event_id TEXT NOT NULL,
+                    correlation_id TEXT NOT NULL,
+                    incident_id TEXT NOT NULL,
+                    final_outcome TEXT NOT NULL,
+                    report_hash TEXT,
+                    event_type TEXT DEFAULT 'autosre.phase34.completed',
+                    stream_seq INTEGER,
+                    report_path TEXT,
+                    published_at TEXT NOT NULL
+                );
+            """)
+            try:
+                conn.execute("ALTER TABLE published_results ADD COLUMN report_hash TEXT;")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE published_results ADD COLUMN event_type TEXT DEFAULT 'autosre.phase34.completed';")
+            except sqlite3.OperationalError:
+                pass
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_published_parent
+                ON published_results (parent_event_id);
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_published_semantic
+                ON published_results (parent_event_id, report_hash, event_type);
+            """)
             conn.commit()
 
     def has_event(self, event_id: str) -> bool:
@@ -153,3 +184,77 @@ class DedupStore:
                 (EventStatus.FAILED.value, error, now, event_id)
             )
             conn.commit()
+
+    def record_published(
+        self,
+        event_id: str,
+        parent_event_id: str,
+        correlation_id: str,
+        incident_id: str,
+        final_outcome: str,
+        stream_seq: Optional[int] = None,
+        report_path: Optional[str] = None,
+        report_hash: Optional[str] = None,
+        event_type: str = "autosre.phase34.completed"
+    ) -> None:
+        """Records a successfully published remediation result event."""
+        now = _now_iso()
+        with self._connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO published_results (
+                    event_id, parent_event_id, correlation_id, incident_id,
+                    final_outcome, report_hash, event_type, stream_seq, report_path, published_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(event_id) DO UPDATE SET
+                    stream_seq=excluded.stream_seq,
+                    report_hash=excluded.report_hash,
+                    event_type=excluded.event_type,
+                    published_at=excluded.published_at;
+                """,
+                (event_id, parent_event_id, correlation_id, incident_id, final_outcome, report_hash, event_type, stream_seq, report_path, now)
+            )
+            conn.commit()
+
+    def get_published(self, event_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieves a published result record by event_id."""
+        with self._connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM published_results WHERE event_id = ? LIMIT 1;",
+                (event_id,)
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_published_by_parent(self, parent_event_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieves the latest published result record for a parent event."""
+        with self._connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT * FROM published_results
+                WHERE parent_event_id = ?
+                ORDER BY rowid DESC LIMIT 1;
+                """,
+                (parent_event_id,)
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def find_published_by_semantic_key(
+        self,
+        parent_event_id: str,
+        report_hash: str,
+        event_type: str = "autosre.phase34.completed"
+    ) -> Optional[Dict[str, Any]]:
+        """Finds any existing published result matching parent_event_id, report_hash, and event_type."""
+        with self._connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT * FROM published_results
+                WHERE parent_event_id = ? AND report_hash = ? AND (event_type = ? OR event_type IS NULL)
+                ORDER BY rowid DESC LIMIT 1;
+                """,
+                (parent_event_id, report_hash, event_type)
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
