@@ -1,0 +1,129 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "IncidentReadyV1",
+  "description": "SOURCE OF TRUTH: tcp_aum/shared/contracts/incident_ready_v1.schema.json (commit: fe9c6354a6d295f352a36faae165a07f37395db6). Contract for cross-laptop incident event delivery from Laptop1 to Laptop2.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "event_type",
+    "event_id",
+    "correlation_id",
+    "incident_id",
+    "source",
+    "transport",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["autosre.incident.ready"]
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "incident_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "type": "object",
+      "required": ["engine"],
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "type": "string",
+          "enum": ["laptop1"]
+        },
+        "dataset_version": {
+          "type": ["string", "null"]
+        },
+        "git_sha": {
+          "type": ["string", "null"]
+        },
+        "generated_at": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "transport": {
+      "type": "object",
+      "required": ["payload_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "payload_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "sent_at": {
+          "type": ["string", "null"]
+        },
+        "attempt": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "system_context",
+        "incident_event",
+        "infrastructure_topology",
+        "service_health_status",
+        "telemetry_evidence",
+        "injected_chaos_context"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "system_context": {
+          "type": "object"
+        },
+        "incident_event": {
+          "type": "object",
+          "required": ["incident_id"],
+          "properties": {
+            "incident_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "severity": {
+              "type": "string"
+            },
+            "priority_score": {
+              "type": "number"
+            },
+            "occurrence_count": {
+              "type": "integer"
+            },
+            "target_service": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        },
+        "infrastructure_topology": {
+          "type": "object"
+        },
+        "service_health_status": {
+          "type": "object"
+        },
+        "telemetry_evidence": {
+          "type": "object"
+        },
+        "injected_chaos_context": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}
